@@ -74,13 +74,19 @@ class WhatsAppController extends Controller
                 $condition = $matches[1];
                 \Log::info('Condición encontrada: ' . $condition);
 
-                // Ajustar el patrón para capturar correctamente la columna y el valor entre comillas
-                if (preg_match('/(\w+)\s*=\s*\'([^\']+)\'/', $condition, $valueMatches)) {
-                    $column = $valueMatches[1];
-                    $value = $valueMatches[2];
+                // Si la condición ya tiene operadores complejos, como < o >, no se aplica más procesamiento
+                // Detectamos si el valor está entre comillas y solo procesamos las que tengan valores directos
+                if (preg_match('/[\'"]/', $condition) === 0) {
+                    // Si no tiene comillas simples, añadimos comillas alrededor de los valores no numéricos (valores de texto)
+                    if (preg_match('/(\w+)\s*=\s*([^\s]+)/', $condition, $valueMatches)) {
+                        $column = $valueMatches[1];
+                        $value = $valueMatches[2];
 
-                    // Reconstruir la condición sin modificar las comillas
-                    $condition = "$column = '$value'";
+                        // Si el valor no es un número, le añadimos comillas
+                        if (!is_numeric($value)) {
+                            $condition = "$column = '$value'";
+                        }
+                    }
                 }
 
                 \Log::info('Condición SQL ajustada: ' . $condition);
