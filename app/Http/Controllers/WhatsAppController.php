@@ -75,13 +75,13 @@ class WhatsAppController extends Controller
                 \Log::info('Condición encontrada: ' . $condition);
 
                 // Ajustar el patrón para capturar correctamente la columna y el valor entre comillas
-    if (preg_match('/(\w+)\s*=\s*\'([^\']+)\'/', $condition, $valueMatches)) {
-        $column = $valueMatches[1];
-        $value = $valueMatches[2];
+                if (preg_match('/(\w+)\s*=\s*\'([^\']+)\'/', $condition, $valueMatches)) {
+                    $column = $valueMatches[1];
+                    $value = $valueMatches[2];
 
-        // Reconstruir la condición sin modificar las comillas
-        $condition = "$column = '$value'";
-    }
+                    // Reconstruir la condición sin modificar las comillas
+                    $condition = "$column = '$value'";
+                }
 
                 \Log::info('Condición SQL ajustada: ' . $condition);
 
