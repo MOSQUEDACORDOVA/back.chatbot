@@ -6,39 +6,30 @@ use Illuminate\Http\Request;
 use Twilio\Rest\Client as ClientWhatsApp;
 use GuzzleHttp\Client;
 use App\Models\ConversationHistory; // Modelo para la tabla del historial
-use Illuminate\Support\Facades\Http; // Asegúrate de importar el facade Http
 
 class WhatsAppController extends Controller
 {
-
     public function receiveMessage(Request $request)
     {
-        // Registrar toda la información que llega desde Baileys
-        \Log::info('Datos recibidos desde Baileys: ' . json_encode($request->all()));
-    
-        // Verificar si el mensaje está presente
-        if ($request->has('Body')) {
-            $from = $request->input('From'); // Número de quien envía el mensaje
-            $body = $request->input('Body'); // Cuerpo del mensaje recibido
-    
+        // Registrar toda la información que llega desde Twilio
+        \Log::info('Datos recibidos desde Twilio: ' . json_encode($request->all()));
+
+        // Verificar si es un mensaje de texto normal (SMS/WhatsApp) y no un evento de conversación
+        if ($request->has('SmsMessageSid')) {
+            $from = $request->input('From', $request->input('Author')); // Asignar 'From' o 'Author' // Número de quien envía el mensaje
+            $body = $request['Body']; // Cuerpo del mensaje recibido
+
             // Guardar el mensaje del usuario en la base de datos
             $this->storeMessage($from, 'user', $body);
-    
+
             // Llamar a ChatGPT
             $this->chatGpt($body, $from);
-    
-            // Log de éxito
-            \Log::info("Mensaje recibido de $from: $body");
-            
+
             return response()->json(['status' => 'Message received and processed']);
         }
-    
-        // Log de no válido
-        \Log::warning("Mensaje no válido recibido: " . json_encode($request->all()));
-    
-        return response()->json(['status' => 'No valid message received'], 400);
+        
     }
-    
+
     public function chatGpt(string $promt, string $from)
     {
         
@@ -163,27 +154,18 @@ class WhatsAppController extends Controller
         }
     }
 
-    public function sendWhatsAppMessage(string $message, string $recipient, string $type = 'text', string $caption = '')
+    public function sendWhatsAppMessage(string $message, string $recipient)
     {
         try {
-            // URL de tu API de Baileys
-            $url = env('BAILEYS_API_URL') . '/send'; // Define esta URL en tu archivo .env
+            $twilio_whatsapp_number = env('TWILIO_WHATSAPP_NUMBER');
+            $account_sid = env("TWILIO_SID");
+            $auth_token = env("TWILIO_AUTH_TOKEN");
 
-            // Preparar la solicitud
-            $response = Http::post($url, [
-                'chatId' => $recipient,
-                'message' => $message,
-                'type' => $type,
-                'caption' => $caption, // El caption es opcional
+            $client = new ClientWhatsApp($account_sid, $auth_token);
+            return $client->messages->create($recipient, [
+                'from' => "whatsapp:$twilio_whatsapp_number",
+                'body' => $message,
             ]);
-
-            // Verifica si la respuesta fue exitosa
-            if ($response->successful()) {
-                return response()->json(['status' => 'success', 'message' => 'Mensaje enviado']);
-            } else {
-                \Log::error("Error sending WhatsApp message: " . $response->body());
-                return response()->json(['error' => 'Failed to send message'], 500);
-            }
         } catch (\Exception $e) {
             // Maneja el error según sea necesario
             \Log::error("Error sending WhatsApp message: " . $e->getMessage());
