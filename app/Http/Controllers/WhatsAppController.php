@@ -49,16 +49,39 @@ class WhatsAppController extends Controller
         $chatHistory = $this->getChatHistory($from);
 
         // Añadir el mensaje del sistema desde el archivo de configuración
-        $systemMessage = [
+        $principal_system_message = [
             'role' => 'system',
-            'content' => config('openai.system_message'), // Obtener el mensaje desde el archivo de configuración
+            'content' => config('openai.principal_system_message'), // Obtener el mensaje desde el archivo de configuración
         ];
 
-        // Añadir el mensaje del sistema al historial de chat
-        $chatHistory[] = $systemMessage;
+        $system_message_informacion_de_los_productos = [
+            'role' => 'system',
+            'content' => config('openai.system_message_informacion_de_los_productos'), // Obtener el mensaje desde el archivo de configuración
+        ];
+
+        $objetivo_principal = [
+            'role' => 'system',
+            'content' => config('openai.objetivo_principal'), // Obtener el mensaje desde el archivo de configuración
+        ];
+
+        $instrucciones_principales = [
+            'role' => 'system',
+            'content' => config('openai.instrucciones_principales'), // Obtener el mensaje desde el archivo de configuración
+        ];
+
         
+        // Añadir el mensaje del sistema al historial de chat
+        $chatHistory[] = $principal_system_message;
+        $chatHistory[] = $system_message_informacion_de_los_productos;
+        $chatHistory[] = $objetivo_principal;
+        $chatHistory[] = $instrucciones_principales;
+
         // Añadir el nuevo mensaje del usuario al historial
         $chatHistory[] = ['role' => 'user', 'content' => $promt];
+
+        // Generar log del historial de chat
+       \Log::info('Historial de chat antes del primer promt de ChatGPT: ' . json_encode($chatHistory));
+
 
         try {
             $response = $client->request('POST', 'https://api.openai.com/v1/chat/completions', [
@@ -129,7 +152,7 @@ class WhatsAppController extends Controller
                         'Content-Type' => 'application/json',
                     ],
                     'json' => [
-                        'model' => 'gpt-3.5-turbo',
+                        'model' => 'gpt-4o',
                         'messages' => $chatHistory,
                     ],
                 ]);
