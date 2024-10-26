@@ -69,18 +69,24 @@ class WhatsAppController extends Controller
             'content' => config('openai.instrucciones_principales'), // Obtener el mensaje desde el archivo de configuración
         ];
 
+        $instrucciones_tecnicas = [
+            'role' => 'system',
+            'content' => config('openai.instrucciones_tecnicas'), 
+        ];
+
         
         // Añadir el mensaje del sistema al historial de chat
         $chatHistory[] = $principal_system_message;
         $chatHistory[] = $system_message_informacion_de_los_productos;
         $chatHistory[] = $objetivo_principal;
         $chatHistory[] = $instrucciones_principales;
+        $chatHistory[] = $instrucciones_tecnicas;
 
         // Añadir el nuevo mensaje del usuario al historial
         $chatHistory[] = ['role' => 'user', 'content' => $promt];
 
         // Generar log del historial de chat
-       \Log::info('Historial de chat antes del primer promt de ChatGPT: ' . json_encode($chatHistory));
+        \Log::info('Historial de chat antes del primer promt de ChatGPT: ' . json_encode($chatHistory));
 
 
         try {
@@ -96,78 +102,46 @@ class WhatsAppController extends Controller
             ]);
 
             $responseData = json_decode($response->getBody(), true);
-            $reply = $responseData['choices'][0]['message']['content'];
+            $replyContent = $responseData['choices'][0]['message']['content'];
 
             // Registrar la respuesta para debugging
-            \Log::info('Respuesta de ChatGPT: ' . $reply);
+            \Log::info('Respuesta de ChatGPT: ' . $replyContent);
 
-            // Verificar si ChatGPT solicitó una consulta a la base de datos
-            if (preg_match('/\{query_database:"([^"]+)"\}/', $reply, $matches)) {
-                $condition = $matches[1];
-                \Log::info('Condición encontrada: ' . $condition);
+            // Extraer el bloque JSON de la respuesta (si tiene texto adicional)
+            preg_match('/\{.*\}$/s', $replyContent, $matches);
+            $cleanedContent = $matches[0] ?? '';
 
-                // Si la condición ya tiene operadores complejos, como < o >, no se aplica más procesamiento
-                // Detectamos si el valor está entre comillas y solo procesamos las que tengan valores directos
-                if (preg_match('/[\'"]/', $condition) === 0) {
-                    // Si no tiene comillas simples, añadimos comillas alrededor de los valores no numéricos (valores de texto)
-                    if (preg_match('/(\w+)\s*=\s*([^\s]+)/', $condition, $valueMatches)) {
-                        $column = $valueMatches[1];
-                        $value = $valueMatches[2];
+            // Intentar decodificar el contenido como JSON
+            $replyData = json_decode($cleanedContent, true);
 
-                        // Si el valor no es un número, le añadimos comillas
-                        if (!is_numeric($value)) {
-                            $condition = "$column = '$value'";
-                        }
-                    }
+            // Registrar el contenido decodificado para debugging
+            \Log::info('Contenido decodificado en $replyData: ' . print_r($replyData, true));
+
+            // Verificar si el formato es JSON y contiene mensajes
+            if (isset($replyData['mensajes']) && is_array($replyData['mensajes'])) {
+                // Iterar sobre los mensajes y enviarlos individualmente
+                foreach ($replyData['mensajes'] as $msg) {
+                    $messageType = $msg['type'];
+                    $messageContent = $msg['message'];
+                    $caption = $msg['caption'] ?? null; // Opcional
+
+                    // Lógica de envío basada en el tipo de mensaje
+                    $this->sendWhatsAppMessage($messageContent, $from, $messageType, $caption);
+
+                    // Guardar cada mensaje en la base de datos
+                    //importante, la bd no entiende con tipo de mensaje solo texto, corregir
+                    $this->storeMessage($from, 'assistant', $messageContent);
                 }
-
-                \Log::info('Condición SQL ajustada: ' . $condition);
-
-                try{
-                    // Realizar la consulta a la base de datos
-                    $data = \DB::table('properties')->whereRaw($condition)->get();
-
-                    if ($data->isEmpty() || $data->count() === 0) {
-                        $chatHistory[] = ['role' => 'system', 'content' => 'SYSTEMA-666: No tenemos esa información.'];
-                        \Log::error('SYSTEMA-666: No tenemos esa información');
-
-                    } else {
-                        // Añadir los resultados obtenidos como un nuevo mensaje en el historial
-                        $chatHistory[] = ['role' => 'system', 'content' => 'SYSTEMA-666: Esta es la información que tenemos:' . $data];
-                        // Convertir $data a JSON para imprimirlo en el log
-                        $dataJson = $data->toJson();
-                        \Log::error('SYSTEMA-666: 111 Todo ok.'. $dataJson);
-                    }
-
-                } catch (\Exception $e) {
-                    \Log::error('Error en la base de datos: ' . $e->getMessage());
-                    $chatHistory[] = ['role' => 'system', 'content' => 'SYSTEMA-666: Dile al usuario que tienes un problema de conexion con nuestros servicios, Error 888 | Error en la base de datos.'];
-                }
-                
-
-                // Volver a llamar a ChatGPT para que genere una respuesta utilizando esos datos
-                $response = $client->request('POST', 'https://api.openai.com/v1/chat/completions', [
-                    'headers' => [
-                        'Authorization' => 'Bearer ' . $apiKey,
-                        'Content-Type' => 'application/json',
-                    ],
-                    'json' => [
-                        'model' => 'gpt-4o',
-                        'messages' => $chatHistory,
-                    ],
-                ]);
-                $responseData = json_decode($response->getBody(), true);
-                $reply = $responseData['choices'][0]['message']['content'];
-                \Log::error('Igual ChatGPT le responde al usuario: '.$reply);
+            } else {
+                // Si la respuesta no es JSON o no tiene múltiples mensajes, envíala como un solo mensaje
+                $this->sendWhatsAppMessage("Perdona, tenemos un problema técnico, pronto estaremos de vuelta.", $from);
+                $this->storeMessage($from, 'assistant', $replyContent);
+                // Registrar la respuesta para debugging
+                //se debe enviar un mensaje de error al admin
+                \Log::error('ChatGPT no respondió con un JSON ' . $replyContent);
             }
 
-            // Guardar la respuesta del asistente en la base de datos
-            $this->storeMessage($from, 'assistant', $reply);
-
-            // Enviar la respuesta vía WhatsApp
-            $this->sendWhatsAppMessage($reply, $from);
-
-            return response()->json(['reply' => $reply]);
+            return response()->json(['reply' => $replyContent]);
 
         } catch (\Exception $e) {
 
@@ -186,7 +160,7 @@ class WhatsAppController extends Controller
         }
     }
 
-    public function sendWhatsAppMessage(string $message, string $recipient, string $type = 'text', string $caption = '')
+    public function sendWhatsAppMessage(string $message, string $recipient, string $type = 'text', string $caption = null)
     {
         try {
             // URL de tu API de Baileys
