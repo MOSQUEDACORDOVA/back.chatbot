@@ -21,14 +21,14 @@ class WhatsAppController extends Controller
             $from = $request->input('From'); // Número de quien envía el mensaje
             $body = $request->input('Body'); // Cuerpo del mensaje recibido
     
+            // Log de éxito
+            \Log::info("Mensaje recibido de $from: $body");
+
             // Guardar el mensaje del usuario en la base de datos
             $this->storeMessage($from, 'user', $body);
     
             // Llamar a ChatGPT
             $this->chatGpt($body, $from);
-    
-            // Log de éxito
-            \Log::info("Mensaje recibido de $from: $body");
             
             return response()->json(['status' => 'Message received and processed']);
         }
@@ -107,8 +107,12 @@ class WhatsAppController extends Controller
             // Registrar la respuesta para debugging
             \Log::info('Respuesta de ChatGPT: ' . $replyContent);
 
+            // Eliminar delimitadores de bloque de código como ```json, ```javascript o simplemente ```
+            $replyContent = preg_replace('/^```[\w]*|```$/m', '', $replyContent);
+
             // Extraer el bloque JSON de la respuesta (si tiene texto adicional)
             preg_match('/\{.*\}$/s', $replyContent, $matches);
+            
             $cleanedContent = $matches[0] ?? '';
 
             // Intentar decodificar el contenido como JSON
@@ -141,6 +145,22 @@ class WhatsAppController extends Controller
                 \Log::error('ChatGPT no respondió con un JSON ' . $replyContent);
             }
 
+            if (isset($replyData['acciones']) && is_array($replyData['acciones'])) {
+                foreach ($replyData['acciones'] as $action) {
+                    $actionType = $action['tipo'];
+                    $formattedFrom = '+' . explode('@', $from)[0];
+
+                    $actionMessage = $action['message']." | Número de cliente: ".$formattedFrom;
+                    
+                    if ($actionType === 'solicitud_de_intervencion_humana') {
+                        // Notificar a los agentes o realizar otra acción necesaria
+                        \Log::info('Intervención humana requerida: ' . $actionMessage . 'Cliente: ' . $formattedFrom);
+                        
+                        // Aquí podrías enviar un mensaje a un agente, registrar una alerta, etc.
+                        $this->sendWhatsAppMessage($actionMessage, "51910270855@c.us");
+                    }
+                }
+            }
             return response()->json(['reply' => $replyContent]);
 
         } catch (\Exception $e) {
