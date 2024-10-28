@@ -7,7 +7,7 @@ use Twilio\Rest\Client as ClientWhatsApp;
 use GuzzleHttp\Client;
 use App\Models\ConversationHistory; // Modelo para la tabla del historial
 
-class WhatsAppController extends Controller
+class TwilioWhatsAppController extends Controller
 {
     public function receiveMessage(Request $request)
     {
@@ -17,10 +17,11 @@ class WhatsAppController extends Controller
         // Verificar si es un mensaje de texto normal (SMS/WhatsApp) y no un evento de conversación
         if ($request->has('SmsMessageSid')) {
             $from = $request->input('From', $request->input('Author')); // Asignar 'From' o 'Author' // Número de quien envía el mensaje
+            $name = $request->input('ProfileName', null); // Nombre del remitente, si está disponible
             $body = $request['Body']; // Cuerpo del mensaje recibido
 
             // Guardar el mensaje del usuario en la base de datos
-            $this->storeMessage($from, 'user', $body);
+            $this->storeMessage($from, 'user', $body, $name);
 
             // Llamar a ChatGPT
             $this->chatGpt($body, $from);
@@ -174,10 +175,11 @@ class WhatsAppController extends Controller
     }
 
     // Función para almacenar mensajes en la base de datos
-    private function storeMessage(string $userPhone, string $role, string $message)
+    private function storeMessage(string $userPhone, string $role, string $message, ?string $name = null)
     {
         ConversationHistory::create([
             'user_phone' => $userPhone,
+            'name' => $name,
             'role' => $role,
             'message' => $message,
         ]);

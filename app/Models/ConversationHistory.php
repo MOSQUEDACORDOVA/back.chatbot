@@ -11,6 +11,7 @@ class ConversationHistory extends Model
     
     protected $fillable = [
         'user_phone',
+        'name',
         'role',
         'message',
     ];
