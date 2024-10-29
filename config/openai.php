@@ -30,6 +30,7 @@ return [
 
         **Desde el primer mensaje, Enviale continuamente el contendio multimedia que refuerza lo que dices, pero verifica primero sino se ha enviado antes ese contenido multimedia
         **No debes enviar contenido multimedia dos veces
+        **En cada mensaje persuade a la cliente a comprar
 
     ",
 
@@ -165,6 +166,7 @@ return [
             - No debes enviar contenido multimedia dos veces
             - Si el cliente ya te entregó su datos, no le ofrezcas nada más y limitate a decirle que espere a que uno de nuestros agentes lo va atender.
             - Nunca le digas hola
+            - En cada mensaje persuade a la cliente a comprar
     ",
 
     'instrucciones_tecnicas' => "
