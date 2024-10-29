@@ -17,15 +17,16 @@ class WhatsAppController extends Controller
         \Log::info('Datos recibidos desde Baileys: ' . json_encode($request->all()));
     
         // Verificar si el mensaje está presente
-        if ($request->has('Body')) {
+        if ($request->has('Body') and $request->input('From')!='status@broadcast') {
             $from = $request->input('From'); // Número de quien envía el mensaje
-            $body = $request->input('Body'); // Cuerpo del mensaje recibido
-    
-            // Log de éxito
-            \Log::info("Mensaje recibido de $from: $body");
+            $body = $request->input('Body') ?? 'Mensaje vacío'; // Cuerpo del mensaje recibido
+            $name = $request->input('Name', 'Desconocido'); // Obtener el nombre, o usar 'Desconocido' si no está presente
 
             // Guardar el mensaje del usuario en la base de datos
-            $this->storeMessage($from, 'user', $body);
+            $this->storeMessage($from, 'user', $body, $name);
+
+            // Log de éxito
+            \Log::info("Mensaje recibido de $from: $body para enviar a ChatGPT");
     
             // Llamar a ChatGPT
             $this->chatGpt($body, $from);
@@ -134,12 +135,12 @@ class WhatsAppController extends Controller
 
                     // Guardar cada mensaje en la base de datos
                     //importante, la bd no entiende con tipo de mensaje solo texto, corregir
-                    $this->storeMessage($from, 'assistant', $messageContent);
+                    $this->storeMessage($from, 'assistant', $messageContent, 'assistant');
                 }
             } else {
                 // Si la respuesta no es JSON o no tiene múltiples mensajes, envíala como un solo mensaje
                 $this->sendWhatsAppMessage("Perdona, tenemos un problema técnico, pronto estaremos de vuelta.", $from);
-                $this->storeMessage($from, 'assistant', $replyContent);
+                $this->storeMessage($from, 'assistant', $replyContent, 'assistant');
                 // Registrar la respuesta para debugging
                 //se debe enviar un mensaje de error al admin
                 \Log::error('ChatGPT no respondió con un JSON ' . $replyContent);
@@ -170,7 +171,7 @@ class WhatsAppController extends Controller
             $reply = "Lo siento, tu consulta es muy extensa, ¿podrias darme más detalles por favor?";
             
             // Guardar la respuesta del asistente en la base de datos
-            $this->storeMessage($from, 'assistant', $reply);
+            $this->storeMessage($from, 'assistant', $reply, 'assistant');
 
             // Enviar la respuesta vía WhatsApp
             $this->sendWhatsAppMessage($reply, $from);
@@ -209,12 +210,13 @@ class WhatsAppController extends Controller
     }
 
     // Función para almacenar mensajes en la base de datos
-    private function storeMessage(string $userPhone, string $role, string $message)
+    private function storeMessage(string $userPhone, string $role, string $message, string $name)
     {
         ConversationHistory::create([
             'user_phone' => $userPhone,
             'role' => $role,
             'message' => $message,
+            'name' => $name,
         ]);
     }
 
