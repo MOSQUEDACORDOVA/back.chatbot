@@ -158,7 +158,7 @@ class WhatsAppController extends Controller
                         \Log::info('Intervención humana requerida: ' . $actionMessage . 'Cliente: ' . $formattedFrom);
                         
                         // Aquí podrías enviar un mensaje a un agente, registrar una alerta, etc.
-                        $this->sendWhatsAppMessage($actionMessage, "51910270855@c.us");
+                        $this->sendWhatsAppMessage($actionMessage, "51945692831@c.us");
                     }
                 }
             }
