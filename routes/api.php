@@ -3,6 +3,7 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\WhatsAppController;
+use App\Http\Controllers\ConversationConfigurationController;
 use App\Http\Controllers\ChatGPTController; //SOLO PARA PRUEBAS
 
 Route::get('/user', function (Request $request) {
@@ -12,5 +13,7 @@ Route::get('/user', function (Request $request) {
 //Route::post('/chat-bot', [ChatBotController::class, 'listenToReplies']);
 
 Route::post('/webhook/whatsapp', [WhatsAppController::class, 'receiveMessage']);
+
+Route::post('/webhook/bot-toggle', [ConversationConfigurationController::class, 'toggleBot']);
 
 Route::post('/chatgpt', [ChatGPTController::class, 'chat']); //solo para pruebas 

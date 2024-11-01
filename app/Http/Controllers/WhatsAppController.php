@@ -6,6 +6,8 @@ use Illuminate\Http\Request;
 use Twilio\Rest\Client as ClientWhatsApp;
 use GuzzleHttp\Client;
 use App\Models\ConversationHistory; // Modelo para la tabla del historial
+use App\Models\ConversationConfiguration;
+
 use Illuminate\Support\Facades\Http; // Asegúrate de importar el facade Http
 
 class WhatsAppController extends Controller
@@ -28,6 +30,12 @@ class WhatsAppController extends Controller
             // Log de éxito
             \Log::info("Mensaje recibido de $from: $body para enviar a ChatGPT");
     
+            // Verificar si el bot está APAGADO para este número
+            if ($this->isBotOffForNumber($from)) {
+                \Log::info("El bot está APAGADO para el número $from. No se procesará el mensaje.");
+                return response()->json(['status' => 'El bot está APAGADO para el número $from. No se procesará el mensaje.'], 403);
+            }
+
             // Llamar a ChatGPT
             $this->chatGpt($body, $from);
             
@@ -87,7 +95,7 @@ class WhatsAppController extends Controller
         $chatHistory[] = ['role' => 'user', 'content' => $promt];
 
         // Generar log del historial de chat
-        \Log::info('Historial de chat antes del primer promt de ChatGPT: ' . json_encode($chatHistory));
+        \Log::info('Historial de chat de ChatGPT: ' . json_encode($chatHistory));
 
 
         try {
@@ -168,7 +176,7 @@ class WhatsAppController extends Controller
 
             \Log::error('Error contacting OpenAI API: ' . $e->getMessage());
             
-            $reply = "Lo siento, tu consulta es muy extensa, ¿podrias darme más detalles por favor?";
+            $reply = "Lo siento, parece que tu consulta es muy extensa, ¿podrias darme más detalles por favor?";
             
             // Guardar la respuesta del asistente en la base de datos
             $this->storeMessage($from, 'assistant', $reply, 'assistant');
@@ -235,5 +243,24 @@ class WhatsAppController extends Controller
                 'content' => $message->message,
             ];
         })->toArray();
+    }
+
+    private function isBotOffForNumber($from)
+    {
+
+        // Registrar el número de teléfono recibido
+        \Log::info("Verificando configuración de conversación para el número: $from");
+
+        // Buscar configuración de conversación para el número
+        $config = ConversationConfiguration::where('user_phone', $from)->first();
+
+        if ($config) {
+            \Log::info("Configuración encontrada para $from: conversación habilitada = " . ($config->conversation_enabled ? 'true' : 'false'));
+        } else {
+            \Log::info("No se encontró configuración para el número: $from");
+        }
+
+        // Si existe y está deshabilitado, devolver true; de lo contrario, false
+        return $config && !$config->conversation_enabled;
     }
 }
