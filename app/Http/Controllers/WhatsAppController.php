@@ -7,6 +7,7 @@ use Twilio\Rest\Client as ClientWhatsApp;
 use GuzzleHttp\Client;
 use App\Models\ConversationHistory; // Modelo para la tabla del historial
 use Illuminate\Support\Facades\Http; // Asegúrate de importar el facade Http
+use App\Models\ConversationConfiguration;
 
 class WhatsAppController extends Controller
 {
@@ -17,16 +18,23 @@ class WhatsAppController extends Controller
         \Log::info('Datos recibidos desde Baileys: ' . json_encode($request->all()));
     
         // Verificar si el mensaje está presente
-        if ($request->has('Body')) {
+        if ($request->has('Body') and $request->input('From')!='status@broadcast') {
             $from = $request->input('From'); // Número de quien envía el mensaje
-            $body = $request->input('Body'); // Cuerpo del mensaje recibido
-    
-            // Log de éxito
-            \Log::info("Mensaje recibido de $from: $body");
+            $body = $request->input('Body') ?? 'Mensaje vacío'; // Cuerpo del mensaje recibido
+            $name = $request->input('Name', 'Desconocido'); // Obtener el nombre, o usar 'Desconocido' si no está presente
 
             // Guardar el mensaje del usuario en la base de datos
-            $this->storeMessage($from, 'user', $body);
+            $this->storeMessage($from, 'user', $body, $name);
+
+            // Log de éxito
+            \Log::info("Mensaje recibido de $from: $body para enviar a ChatGPT");
     
+            // Verificar si el bot está APAGADO para este número
+            if ($this->isBotOffForNumber($from)) {
+                \Log::info("El bot está APAGADO para el número $from. No se procesará el mensaje.");
+                return response()->json(['status' => 'El bot está APAGADO para el número $from. No se procesará el mensaje.'], 403);
+            }
+
             // Llamar a ChatGPT
             $this->chatGpt($body, $from);
             
@@ -102,20 +110,18 @@ class WhatsAppController extends Controller
             ]);
 
             $responseData = json_decode($response->getBody(), true);
-            $replyContent = $responseData['choices'][0]['message']['content'];
 
             // Registrar la respuesta para debugging
-            \Log::info('Respuesta de ChatGPT: ' . $replyContent);
+            \Log::info('Respuesta de ChatGPT: ' . print_r($responseData, true));
 
-            // Eliminar delimitadores de bloque de código como ```json, ```javascript o simplemente ```
-            $replyContent = preg_replace('/^```[\w]*|```$/m', '', $replyContent);
+            // Obtener el contenido del mensaje de respuesta
+            $replyContent = $responseData['choices'][0]['message']['content'];
 
-            // Extraer el bloque JSON de la respuesta (si tiene texto adicional)
-            preg_match('/\{.*\}$/s', $replyContent, $matches);
-            
+            // Eliminar delimitadores de bloque de código y extraer el bloque JSON
+            preg_match('/\{.*\}/s', $replyContent, $matches);
             $cleanedContent = $matches[0] ?? '';
 
-            // Intentar decodificar el contenido como JSON
+            // Intentar decodificar el contenido como JSON una sola vez
             $replyData = json_decode($cleanedContent, true);
 
             // Registrar el contenido decodificado para debugging
@@ -241,5 +247,24 @@ class WhatsAppController extends Controller
                 'content' => $message->message,
             ];
         })->toArray();
+    }
+
+    private function isBotOffForNumber($from)
+    {
+
+        // Registrar el número de teléfono recibido
+        \Log::info("Verificando configuración de conversación para el número: $from");
+
+        // Buscar configuración de conversación para el número
+        $config = ConversationConfiguration::where('user_phone', $from)->first();
+
+        if ($config) {
+            \Log::info("Configuración encontrada para $from: conversación habilitada = " . ($config->conversation_enabled ? 'true' : 'false'));
+        } else {
+            \Log::info("No se encontró configuración para el número: $from");
+        }
+
+        // Si existe y está deshabilitado, devolver true; de lo contrario, false
+        return $config && !$config->conversation_enabled;
     }
 }

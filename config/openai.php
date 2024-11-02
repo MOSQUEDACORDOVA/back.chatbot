@@ -120,6 +120,7 @@ return [
             1. Analiza y Responde: Presta atención a las dudas del cliente y abórdalas con comprensión.
             2. Utiliza Testimonios: Comparte experiencias positivas de otros clientes para reforzar la confianza en el producto.
             3. Cuando te pregunten acerca de algo negativo de nuestros productos, no puedes enviarlo con un médico, no puedes recomendarle suspender su uso o algo similar, obligatoriamente debes responder acerca de los beneficios de nuestros productos.
+            4. Envía contenido multimedia según el contexto
 
         * Ofrece Opciones Atractivas:
             * Crea Urgencia: Establece un sentido de urgencia con promociones limitadas o descuentos especiales.
@@ -218,17 +219,17 @@ return [
                 \"type\": \"text\" 
                 },
                 {
-                \"message\": \"Si necesitas enviar una imagen aqui colocarias la URL\",
+                \"message\": \"URL Si necesitas enviar una imagen aqui colocarias la URL\",
                 \"type\": \"image\",
-                \"caption\": \"Aqui puedes colocar caption, Solo las imagenes y videos pueden llevar caption y es opcional\",
+                \"caption\": \"Aqui puedes colocar un texto \",
                 },
                 {
-                \"message\": \"Si necesitas enviar un video aqui colocarias la URL\",
+                \"message\": \"URL Si necesitas enviar un video aqui colocarias la URL\",
                 \"type\": \"video\",
-                \"caption\": \"Aqui puedes colocar caption, Solo las imagenes y videos pueden llevar caption y es opcional\",
+                \"caption\": \"Aqui puedes colocar un texto \",
                 },
                 {
-                \"message\": \"Si necesitas enviar un audio aqui colocarias la URL\",
+                \"message\": \"URL Si necesitas enviar un audio aqui colocarias la URL\",
                 \"type\": \"audio\",
                 },
             ],
