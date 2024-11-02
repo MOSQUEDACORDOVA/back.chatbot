@@ -141,8 +141,12 @@ class WhatsAppController extends Controller
                 $this->sendWhatsAppMessage("Perdona, tenemos un problema técnico, pronto estaremos de vuelta.", $from);
                 $this->storeMessage($from, 'assistant', $replyContent);
                 // Registrar la respuesta para debugging
-                //se debe enviar un mensaje de error al admin
                 \Log::error('ChatGPT no respondió con un JSON ' . $replyContent);
+
+                //se debe enviar un mensaje de error al admin
+                $solicitudHuman = 'El cliente: '.$from.' Necesita ayuda. . .';
+                $this->sendWhatsAppMessage($solicitudHuman, "51910270855@c.us");
+
             }
 
             if (isset($replyData['acciones']) && is_array($replyData['acciones'])) {
@@ -174,6 +178,10 @@ class WhatsAppController extends Controller
 
             // Enviar la respuesta vía WhatsApp
             $this->sendWhatsAppMessage($reply, $from);
+
+            //se debe enviar un mensaje de error al admin
+            $solicitudHuman = 'El cliente: '.$from.' Necesita ayuda. . .';
+            $this->sendWhatsAppMessage($solicitudHuman, "51910270855@c.us");
 
             return response()->json(['error' => 'Error al comunicarse con la API'], 500);
 
