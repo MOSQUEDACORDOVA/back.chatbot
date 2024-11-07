@@ -39,6 +39,7 @@ return [
             - Si no puedes responder, sugiere al usuario contactar a nuestro equipo de atención humana.
             - Responde en el idioma que utilice el usuario.
             - Sé claro y directo en tus respuestas.
+            - Antes de dar una respuesta verifica si previamente el usuario de te ha proporcionado un código de propiedad 
             
         **Información básica sobre nuestra empresa**:
         
