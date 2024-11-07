@@ -6,9 +6,6 @@ use Illuminate\Http\Request;
 use Twilio\Rest\Client as ClientWhatsApp;
 use GuzzleHttp\Client;
 use App\Models\ConversationHistory; // Modelo para la tabla del historial
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Log;
-
 
 class TwilioWhatsAppController extends Controller
 {
@@ -74,20 +71,47 @@ class TwilioWhatsAppController extends Controller
             // Registrar la respuesta para debugging
             \Log::info('Respuesta de ChatGPT: ' . $reply);
 
-            // Verificar si ChatGPT solicitó una consulta 
-            if (preg_match('/propertyId\s*[:=]\s*["\'\s]*([A-Za-z0-9+]+)["\'\s]*[^a-zA-Z0-9]*\s*/', $reply, $matches)) {
+            // Verificar si ChatGPT solicitó una consulta a la base de datos
+            if (preg_match('/\{query_database:"([^"]+)"\}/', $reply, $matches)) {
                 $condition = $matches[1];
-                \Log::info('El valor de propertyId es: ' . $condition);
+                \Log::info('Condición encontrada: ' . $condition);
+
+                // Si la condición ya tiene operadores complejos, como < o >, no se aplica más procesamiento
+                // Detectamos si el valor está entre comillas y solo procesamos las que tengan valores directos
+                if (preg_match('/[\'"]/', $condition) === 0) {
+                    // Si no tiene comillas simples, añadimos comillas alrededor de los valores no numéricos (valores de texto)
+                    if (preg_match('/(\w+)\s*=\s*([^\s]+)/', $condition, $valueMatches)) {
+                        $column = $valueMatches[1];
+                        $value = $valueMatches[2];
+
+                        // Si el valor no es un número, le añadimos comillas
+                        if (!is_numeric($value)) {
+                            $condition = "$column = '$value'";
+                        }
+                    }
+                }
+
+                \Log::info('Condición SQL ajustada: ' . $condition);
 
                 try{
-                    $propiedadInfo = $this->getPropertyDetails($condition);
-                    \Log::info('Respuesta del servicio externo: ' . json_encode($propiedadInfo));
+                    // Realizar la consulta a la base de datos
+                    $data = \DB::table('properties')->whereRaw($condition)->get();
 
-                    $chatHistory[] = ['role' => 'system', 'content' => 'Esta es la información que tenemos:' . json_encode($propiedadInfo)];
+                    if ($data->isEmpty() || $data->count() === 0) {
+                        $chatHistory[] = ['role' => 'system', 'content' => 'SYSTEMA-666: No tenemos esa información.'];
+                        \Log::error('SYSTEMA-666: No tenemos esa información');
+
+                    } else {
+                        // Añadir los resultados obtenidos como un nuevo mensaje en el historial
+                        $chatHistory[] = ['role' => 'system', 'content' => 'SYSTEMA-666: Esta es la información que tenemos:' . $data];
+                        // Convertir $data a JSON para imprimirlo en el log
+                        $dataJson = $data->toJson();
+                        \Log::error('SYSTEMA-666: 111 Todo ok.'. $dataJson);
+                    }
 
                 } catch (\Exception $e) {
                     \Log::error('Error en la base de datos: ' . $e->getMessage());
-                    $chatHistory[] = ['role' => 'system', 'content' => 'SYSTEMA-666: Dile al usuario que tienes un problema de conexion con nuestros servicios'];
+                    $chatHistory[] = ['role' => 'system', 'content' => 'SYSTEMA-666: Dile al usuario que tienes un problema de conexion con nuestros servicios, Error 888 | Error en la base de datos.'];
                 }
                 
 
@@ -104,9 +128,7 @@ class TwilioWhatsAppController extends Controller
                 ]);
                 $responseData = json_decode($response->getBody(), true);
                 $reply = $responseData['choices'][0]['message']['content'];
-                \Log::info('ChatGPT le responde al usuario: '.$reply);
-            }else{
-                \Log::info('No hubo propertyId, ChatGPT dijo: ' . $reply);
+                \Log::error('Igual ChatGPT le responde al usuario: '.$reply);
             }
 
             // Guardar la respuesta del asistente en la base de datos
@@ -180,42 +202,4 @@ class TwilioWhatsAppController extends Controller
             ];
         })->toArray();
     }
-
-    private function getPropertyDetails($propertyId)
-    {
-        // Construir la URL con el propertyId
-        $url = "http://qmsapi-b0g9adbfbncygua0.canadacentral-01.azurewebsites.net/api/Properties?propertyId={$propertyId}";
-
-        try {
-            // Realizar la solicitud GET
-            $response = Http::get($url);
-
-            // Verificar si la respuesta es exitosa
-            if ($response->successful()) {
-                // Obtener los datos de la respuesta
-                $data = $response->json();
-                return $data;
-            } elseif ($response->clientError()) {
-                // Error del lado del cliente (4xx)
-                Log::error('Error del cliente al obtener detalles de la propiedad', ['propertyId' => $propertyId, 'status' => $response->status(), 'response' => $response->body()]);
-                return response()->json(['error' => 'Error del cliente al obtener la información del propertyId'], 400);
-            } elseif ($response->serverError()) {
-                // Error del servidor (5xx)
-                Log::error('Error del servidor al obtener detalles de la propiedad', ['propertyId' => $propertyId, 'status' => $response->status(), 'response' => $response->body()]);
-                return response()->json(['error' => 'Error del servidor al obtener la información del propertyId'], 500);
-            } else {
-                // Otro tipo de error no esperado
-                Log::error('Respuesta inesperada al obtener detalles de la propiedad', ['propertyId' => $propertyId, 'status' => $response->status(), 'response' => $response->body()]);
-                return response()->json(['error' => 'Error inesperado al obtener la información del propertyId'], 500);
-            }
-        } catch (\Exception $e) {
-            // Manejo de excepciones (errores de red, no disponible, etc.)
-            Log::error('Error de conexión al obtener detalles de la propiedad', [
-                'propertyId' => $propertyId,
-                'exception' => $e->getMessage()
-            ]);
-            return response()->json(['error' => 'No se pudo conectar al servicio de propiedades'], 503);
-        }
-    }
-
 }
