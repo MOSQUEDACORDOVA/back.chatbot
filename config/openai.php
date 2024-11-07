@@ -34,6 +34,7 @@ return [
 
         **Si el cliente ya te confirmó que desea el producto, no le ofrezcas nada más, ni le preguntes nada más y limitate a decirle que espere a uno de nuestros agentes que lo va atender.
 
+        **Si recibes un Mensaje vacío, no lo menciones, solo ve al grano a ofrecer el producto
     ",
 
     'system_message_informacion_de_los_productos' => "
