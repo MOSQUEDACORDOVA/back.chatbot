@@ -131,8 +131,16 @@ class WhatsAppController extends Controller
             if (isset($replyData['mensajes']) && is_array($replyData['mensajes'])) {
                 // Iterar sobre los mensajes y enviarlos individualmente
                 foreach ($replyData['mensajes'] as $msg) {
+
                     $messageType = $msg['type'];
-                    $messageContent = $msg['message'];
+                    // Lógica para determinar el contenido del mensaje
+                    if (in_array($messageType, ['video', 'audio', 'image'])) {
+                        // Si el tipo es video, audio o imagen, la URL se encuentra en 'message'
+                        $messageContent = $msg['url'];
+                    } else {
+                        // Para otros tipos, el contenido del mensaje es simplemente el texto
+                        $messageContent = $msg['message'];
+                    }
                     $caption = $msg['caption'] ?? null; // Opcional
 
                     // Lógica de envío basada en el tipo de mensaje
@@ -157,11 +165,13 @@ class WhatsAppController extends Controller
 
             if (isset($replyData['acciones']) && is_array($replyData['acciones'])) {
                 foreach ($replyData['acciones'] as $action) {
-                    $actionType = $action['tipo'];
+                    $actionType = $action['type'];
                     $formattedFrom = '+' . explode('@', $from)[0];
 
                     $actionMessage = $action['message']." | Número de cliente: ".$formattedFrom;
                     
+                    \Log::info('Se detectó una solicitud de acción: ' . $actionMessage . 'Cliente: ' . $formattedFrom);
+                        
                     if ($actionType === 'solicitud_de_intervencion_humana') {
                         // Notificar a los agentes o realizar otra acción necesaria
                         \Log::info('Intervención humana requerida: ' . $actionMessage . 'Cliente: ' . $formattedFrom);

@@ -224,23 +224,23 @@ return [
                 \"type\": \"text\" 
                 },
                 {
-                \"message\": \"URL Si necesitas enviar una imagen aqui colocarias la URL\",
+                \"url\": \"Si necesitas enviar una imagen aqui colocarias la URL\",
                 \"type\": \"image\",
                 \"caption\": \"Aqui puedes colocar un texto \",
                 },
                 {
-                \"message\": \"URL Si necesitas enviar un video aqui colocarias la URL\",
+                \"url\": \"Si necesitas enviar un video aqui colocarias la URL\",
                 \"type\": \"video\",
                 \"caption\": \"Aqui puedes colocar un texto \",
                 },
                 {
-                \"message\": \"URL Si necesitas enviar un audio aqui colocarias la URL\",
+                \"url\": \"Si necesitas enviar un audio aqui colocarias la URL\",
                 \"type\": \"audio\",
                 },
             ],
             \"acciones\": [
                 {
-                    \"tipo\": \"solicitud_de_intervencion_humana\",
+                    \"type\": \"solicitud_de_intervencion_humana\",
                     \"message\": \"Aqui puedes enviarle un mensaje a los agentes cuando necesites intervención humana para confirmar el pedido y cerrar la venta con el cliente o para algo más.\",
                 }
             ]
