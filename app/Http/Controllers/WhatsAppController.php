@@ -91,7 +91,7 @@ class WhatsAppController extends Controller
         $chatHistory[] = $instrucciones_tecnicas;
 
         // Añadir el nuevo mensaje del usuario al historial
-        $chatHistory[] = ['role' => 'user', 'content' => $promt];
+        //$chatHistory[] = ['role' => 'user', 'content' => $promt];
 
         // Generar log del historial de chat
         \Log::info('Historial de chat antes del primer promt de ChatGPT: ' . json_encode($chatHistory));

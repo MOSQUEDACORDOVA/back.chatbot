@@ -158,7 +158,6 @@ return [
 
             ✅(Para depósitos de otros bancos pueden hacerlo con el CCI, no cobran comisión si la transferencia es diferido). 
 
-
             📌 YAPE y PLIN
             910270855
 
@@ -167,7 +166,7 @@ return [
 
 
         *Si el cliente ya está decidido a comprar pero vive fuera de Lima, 
-            - Mencionale que el envío es previo depósito, o sea debe pagar primero
+            - Mencionale que el envío es previo depósito, o sea debe pagar primero asi que *envíale los DATOS PARA EL PAGO ADELANTADO*
             - Solicita intervenció humana: solicitud_de_intervencion_humana para que terminar el pedido del cliente 
 
         *Oferta secreata*
