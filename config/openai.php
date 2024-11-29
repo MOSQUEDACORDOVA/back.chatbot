@@ -165,6 +165,10 @@ return [
             Todas las cuentas están a nombre de: 
             ✅ *Gerson Gilber Garay Saravia*
 
+        *Los envíos se realizan de lunes a viernes de un día para otro, 
+            por ejemplo si el pedido se realiza un miércoles se gestiona para el día jueves. 
+            Sin embargo si el pedido se realiza el día viernes, sábado o domingo se gestionarán el día lunes. 
+
 
         *Si el cliente ya está decidido a comprar pero vive fuera de Lima, 
             - Mencionale que el envío es previo depósito, o sea debe pagar primero asi que *envíale los DATOS PARA EL PAGO ADELANTADO*
