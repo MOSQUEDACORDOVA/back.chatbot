@@ -20,7 +20,7 @@ class WhatsAppController extends Controller
         // Verificar si el mensaje está presente
         if ($request->has('Body') and $request->input('From')!='status@broadcast') {
             $from = $request->input('From'); // Número de quien envía el mensaje
-            $body = $request->input('Body') ?? 'Mensaje vacío'; // Cuerpo del mensaje recibido
+            $body = $request->input('Body') ?? 'Ve al grano y ofrece el producto'; // Cuerpo del mensaje recibido
             $name = $request->input('Name', 'Desconocido'); // Obtener el nombre, o usar 'Desconocido' si no está presente
 
             // Guardar el mensaje del usuario en la base de datos
@@ -53,42 +53,50 @@ class WhatsAppController extends Controller
         $apiKey = env('OPENAI_API_KEY');
         
         $client = new Client();
+
+        // Inicializar $chatHistory como un arreglo de mensajes
+        
+        $systemMessages = [
+            [
+                'role' => 'system',
+                'content' => config('openai.principal_system_message'), // Obtener el mensaje desde el archivo de configuración
+            ],
+            [
+                'role' => 'system',
+                'content' => config('openai.system_message_informacion_de_los_productos'), // Obtener el mensaje desde el archivo de configuración
+            ],
+            [
+                'role' => 'system',
+                'content' => config('openai.objetivo_principal'), // Obtener el mensaje desde el archivo de configuración
+            ],
+            [
+                'role' => 'system',
+                'content' => config('openai.instrucciones_principales'), // Obtener el mensaje desde el archivo de configuración
+            ],
+            [
+                'role' => 'system',
+                'content' => config('openai.instrucciones_tecnicas'), 
+            ],
+        ];
+
         // Obtener el historial de mensajes desde la base de datos
-        $chatHistory = $this->getChatHistory($from);
-
-        // Añadir el mensaje del sistema desde el archivo de configuración
-        $principal_system_message = [
-            'role' => 'system',
-            'content' => config('openai.principal_system_message'), // Obtener el mensaje desde el archivo de configuración
-        ];
-
-        $system_message_informacion_de_los_productos = [
-            'role' => 'system',
-            'content' => config('openai.system_message_informacion_de_los_productos'), // Obtener el mensaje desde el archivo de configuración
-        ];
-
-        $objetivo_principal = [
-            'role' => 'system',
-            'content' => config('openai.objetivo_principal'), // Obtener el mensaje desde el archivo de configuración
-        ];
-
-        $instrucciones_principales = [
-            'role' => 'system',
-            'content' => config('openai.instrucciones_principales'), // Obtener el mensaje desde el archivo de configuración
-        ];
-
-        $instrucciones_tecnicas = [
-            'role' => 'system',
-            'content' => config('openai.instrucciones_tecnicas'), 
-        ];
+        $userHistory = $this->getChatHistory($from);
 
         
-        // Añadir el mensaje del sistema al historial de chat
-        $chatHistory[] = $principal_system_message;
-        $chatHistory[] = $system_message_informacion_de_los_productos;
-        $chatHistory[] = $objetivo_principal;
-        $chatHistory[] = $instrucciones_principales;
-        $chatHistory[] = $instrucciones_tecnicas;
+        // Si no hay historial, agregar el mensaje genérico
+        // Determinar si es el primer mensaje enviado por el usuario
+        if (count($userHistory) === 1) {
+            // Registrar el historial vacio en los logs para debugging
+            \Log::info('Es el primer mensaje de chat recuperado para el usuario userHistory ' . $from . ': ' . print_r($userHistory, true));
+
+            $userHistory[] = [
+                'role' => 'assistant',
+                'content' => 'Ve al grano y ofrece el producto.',
+            ];
+        }
+
+        // Obtener el historial de mensajes desde la base de datos y combinarlo con los mensajes del sistema
+        $chatHistory = array_merge($userHistory, $systemMessages);
 
         // Añadir el nuevo mensaje del usuario al historial
         //$chatHistory[] = ['role' => 'user', 'content' => $promt];
@@ -152,14 +160,15 @@ class WhatsAppController extends Controller
                 }
             } else {
                 // Si la respuesta no es JSON o no tiene múltiples mensajes, envíala como un solo mensaje
-                $this->sendWhatsAppMessage("Perdona, tenemos un problema técnico, pronto estaremos de vuelta.", $from);
+                $this->sendWhatsAppMessage("Hola Linda, en unos minutos te envío toda la información.", $from);
                 $this->storeMessage($from, 'assistant', $replyContent);
                 // Registrar la respuesta para debugging
                 \Log::error('ChatGPT no respondió con un JSON ' . $replyContent);
 
                 //se debe enviar un mensaje de error al admin
                 $solicitudHuman = 'El cliente: '.$from.' Necesita ayuda. . .';
-                $this->sendWhatsAppMessage($solicitudHuman, "51910270855@c.us");
+                $this->sendWhatsAppMessage($solicitudHuman, "51969647875@c.us");
+                \Log::error('Se solicitó ayuda al administrador ');
 
             }
 
@@ -177,7 +186,7 @@ class WhatsAppController extends Controller
                         \Log::info('Intervención humana requerida: ' . $actionMessage . 'Cliente: ' . $formattedFrom);
                         
                         // Aquí podrías enviar un mensaje a un agente, registrar una alerta, etc.
-                        $this->sendWhatsAppMessage($actionMessage, "51910270855@c.us");
+                        $this->sendWhatsAppMessage($actionMessage, "51969647875@c.us");
                     }
                 }
             }
@@ -197,7 +206,7 @@ class WhatsAppController extends Controller
 
             //se debe enviar un mensaje de error al admin
             $solicitudHuman = 'El cliente: '.$from.' Necesita ayuda. . .';
-            $this->sendWhatsAppMessage($solicitudHuman, "51910270855@c.us");
+            $this->sendWhatsAppMessage($solicitudHuman, "51969647875@c.us");
 
             return response()->json(['error' => 'Error al comunicarse con la API'], 500);
 
