@@ -242,14 +242,24 @@ class WhatsAppController extends Controller
     }
 
     // Función para almacenar mensajes en la base de datos
-    private function storeMessage(string $userPhone, string $role, string $message)
+    private function storeMessage(string $userPhone, string $role, string $message, ?string $name = null)
     {
-        ConversationHistory::create([
+        // Construir el arreglo con los valores obligatorios
+        $data = [
             'user_phone' => $userPhone,
             'role' => $role,
             'message' => $message,
-        ]);
+        ];
+
+        // Agregar 'name' solo si no es nulo
+        if (!is_null($name)) {
+            $data['name'] = $name;
+        }
+
+        // Crear el registro en la base de datos
+        ConversationHistory::create($data);
     }
+
 
     // Función para recuperar el historial de conversación de la base de datos
     private function getChatHistory(string $userPhone)

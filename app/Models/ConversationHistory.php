@@ -13,5 +13,6 @@ class ConversationHistory extends Model
         'user_phone',
         'role',
         'message',
+        'name',
     ];
 }
