@@ -8,6 +8,7 @@ use GuzzleHttp\Client;
 use App\Models\ConversationHistory; // Modelo para la tabla del historial
 use Illuminate\Support\Facades\Http; // Asegúrate de importar el facade Http
 use App\Models\ConversationConfiguration;
+use Illuminate\Support\Facades\Log;
 
 class WhatsAppController extends Controller
 {
@@ -29,14 +30,30 @@ class WhatsAppController extends Controller
             // Log de éxito
             \Log::info("Mensaje recibido de $from: $body para enviar a ChatGPT");
     
+            $conversationConfiguration = ConversationConfiguration::where('user_phone', $from)->first(['conversation_enabled', 'thread_id']);
+
             // Verificar si el bot está APAGADO para este número
-            if ($this->isBotOffForNumber($from)) {
-                \Log::info("El bot está APAGADO para el número $from. No se procesará el mensaje.");
+            if ($conversationConfiguration && !$conversationConfiguration->conversation_enabled) {
+                Log::info("El bot está APAGADO para el número $from. No se procesará el mensaje.");
                 return response()->json(['status' => 'El bot está APAGADO para el número $from. No se procesará el mensaje.'], 403);
             }
+            
+            if (!$conversationConfiguration) {
+                $threadId = $this->createNewThread();
+                Log::info("Nuevo hilo creado para el número $from con thread_id: $threadId");
+            
+                $conversationConfiguration = ConversationConfiguration::create([
+                    'user_phone' => $from,
+                    'conversation_enabled' => true,
+                    'thread_id' => $threadId,
+                ]);
+            }else {
+                \Log::info("Configuración existente encontrada para $from. thread_id: " . $conversationConfiguration->thread_id);
+            }
 
-            // Llamar a ChatGPT
-            $this->chatGpt($body, $from);
+            // Llamar a ChatGPT utilizando el thread_id
+            $this->chatGpt($body, $from, $conversationConfiguration->thread_id);
+
             
             return response()->json(['status' => 'Message received and processed']);
         }
@@ -47,83 +64,44 @@ class WhatsAppController extends Controller
         return response()->json(['status' => 'No valid message received'], 400);
     }
     
-    public function chatGpt(string $promt, string $from)
+    public function chatGpt(string $promt, string $from, string $thread_id)
     {
-        
-        $apiKey = env('OPENAI_API_KEY');
-        
-        $client = new Client();
+        // Agregar el mensaje al hilo existente
+        $sendMessageResult = $this->sendMessageToThread($thread_id, 'user', $promt);
 
-        // Inicializar $chatHistory como un arreglo de mensajes
-        
-        $systemMessages = [
-            [
-                'role' => 'system',
-                'content' => config('openai.principal_system_message'), // Obtener el mensaje desde el archivo de configuración
-            ],
-            [
-                'role' => 'system',
-                'content' => config('openai.system_message_informacion_de_los_productos'), // Obtener el mensaje desde el archivo de configuración
-            ],
-            [
-                'role' => 'system',
-                'content' => config('openai.objetivo_principal'), // Obtener el mensaje desde el archivo de configuración
-            ],
-            [
-                'role' => 'system',
-                'content' => config('openai.instrucciones_principales'), // Obtener el mensaje desde el archivo de configuración
-            ],
-            [
-                'role' => 'system',
-                'content' => config('openai.instrucciones_tecnicas'), 
-            ],
-        ];
+        if ($sendMessageResult) {
+            // Verificar que el mensaje se haya agregado con éxito
+            \Log::info("Mensaje agregado al hilo $thread_id correctamente. Ejecutando run...");
 
-        // Obtener el historial de mensajes desde la base de datos
-        $userHistory = $this->getChatHistory($from);
+            // Ejecutar el run después de agregar el mensaje
+            $runResult = $this->runThread($thread_id);
 
-        
-        // Si no hay historial, agregar el mensaje genérico
-        // Determinar si es el primer mensaje enviado por el usuario
-        if (count($userHistory) === 1) {
-            // Registrar el historial vacio en los logs para debugging
-            \Log::info('Es el primer mensaje de chat recuperado para el usuario userHistory ' . $from . ': ' . print_r($userHistory, true));
+            if ($runResult['success']) {
+                $runData = $runResult['data'];
+                \Log::info("Run ejecutado correctamente. ID del run: " . $runData['id']);
 
-            $userHistory[] = [
-                'role' => 'assistant',
-                'content' => 'Ve al grano y ofrece el producto.',
-            ];
+                $messageValue = $this->getMessageByRunId($thread_id, $runData['id']);
+                
+                if ($messageValue) {
+                        \Log::info("Mensaje del run {$runData['id']}: $messageValue");
+                } else {
+                        \Log::warning("No se encontró un mensaje asociado con el run {$runData['id']}");
+                    }
+
+            } else {
+                \Log::error("Fallo al ejecutar el run para el hilo $thread_id. Error: " . json_encode($runResult['error']));
+                return null; // Manejo de error
+            }
+        } else {
+            \Log::error("No se pudo agregar el mensaje al hilo $thread_id. No se ejecutará el run.");
+            return null; // Manejo de error
         }
-
-        // Obtener el historial de mensajes desde la base de datos y combinarlo con los mensajes del sistema
-        $chatHistory = array_merge($userHistory, $systemMessages);
-
-        // Añadir el nuevo mensaje del usuario al historial
-        //$chatHistory[] = ['role' => 'user', 'content' => $promt];
-
-        // Generar log del historial de chat
-        \Log::info('Historial de chat antes del primer promt de ChatGPT: ' . json_encode($chatHistory));
-
+        
 
         try {
-            $response = $client->request('POST', 'https://api.openai.com/v1/chat/completions', [
-                'headers' => [
-                    'Authorization' => 'Bearer ' . $apiKey,
-                    'Content-Type' => 'application/json',
-                ],
-                'json' => [
-                    'model' => 'gpt-4o', // Cambiar a 'gpt-4' si es necesario
-                    'messages' => $chatHistory, // Enviar el historial completo
-                ],
-            ]);
-
-            $responseData = json_decode($response->getBody(), true);
-
-            // Registrar la respuesta para debugging
-            \Log::info('Respuesta de ChatGPT: ' . print_r($responseData, true));
-
+            
             // Obtener el contenido del mensaje de respuesta
-            $replyContent = $responseData['choices'][0]['message']['content'];
+            $replyContent = $messageValue;
 
             // Eliminar delimitadores de bloque de código y extraer el bloque JSON
             preg_match('/\{.*\}/s', $replyContent, $matches);
@@ -167,7 +145,7 @@ class WhatsAppController extends Controller
 
                 //se debe enviar un mensaje de error al admin
                 $solicitudHuman = 'El cliente: '.$from.' Necesita ayuda. . .';
-                $this->sendWhatsAppMessage($solicitudHuman, "51969647875@c.us");
+                $this->sendWhatsAppMessage($solicitudHuman, "51945692831@c.us");
                 \Log::error('Se solicitó ayuda al administrador ');
 
             }
@@ -186,7 +164,7 @@ class WhatsAppController extends Controller
                         \Log::info('Intervención humana requerida: ' . $actionMessage . 'Cliente: ' . $formattedFrom);
                         
                         // Aquí podrías enviar un mensaje a un agente, registrar una alerta, etc.
-                        $this->sendWhatsAppMessage($actionMessage, "51969647875@c.us");
+                        $this->sendWhatsAppMessage($actionMessage, "51945692831@c.us");
                     }
                 }
             }
@@ -196,7 +174,7 @@ class WhatsAppController extends Controller
 
             \Log::error('Error contacting OpenAI API: ' . $e->getMessage());
             
-            $reply = "Lo siento, tu consulta es muy extensa, ¿podrias darme más detalles por favor?";
+            $reply = "Hola Linda, en unos minutos te envío toda la información.";
             
             // Guardar la respuesta del asistente en la base de datos
             $this->storeMessage($from, 'assistant', $reply, 'assistant');
@@ -206,7 +184,7 @@ class WhatsAppController extends Controller
 
             //se debe enviar un mensaje de error al admin
             $solicitudHuman = 'El cliente: '.$from.' Necesita ayuda. . .';
-            $this->sendWhatsAppMessage($solicitudHuman, "51969647875@c.us");
+            $this->sendWhatsAppMessage($solicitudHuman, "51945692831@c.us");
 
             return response()->json(['error' => 'Error al comunicarse con la API'], 500);
 
@@ -257,41 +235,150 @@ class WhatsAppController extends Controller
         // Crear el registro en la base de datos
         ConversationHistory::create($data);
     }
-
-
-    // Función para recuperar el historial de conversación de la base de datos
-    private function getChatHistory(string $userPhone)
+    
+    private function createNewThread()
     {
-        // Obtener todos los mensajes previos de este usuario ordenados por creación
-        $history = ConversationHistory::where('user_phone', $userPhone)
-            ->orderBy('created_at', 'asc')
-            ->get(['role', 'message']);
+        try {
+            // Realizamos la solicitud POST para crear un nuevo hilo
+            $response = \Http::withHeaders([
+                'Authorization' => 'Bearer ' . env('OPENAI_API_KEY'), // Agregar el token de la API
+                'Content-Type' => 'application/json',
+                'OpenAI-Beta' => 'assistants=v2', // Encabezado adicional requerido
+            ])->post('https://api.openai.com/v1/threads', []);
 
-        // Convertir el formato de los mensajes para enviarlos a la API de OpenAI
-        return $history->map(function ($message) {
-            return [
-                'role' => $message->role,
-                'content' => $message->message,
-            ];
-        })->toArray();
-    }
+            $responseData = $response->json();
+            \Log::info('Respuesta de ChatGPT: ' . json_encode($responseData));
 
-    private function isBotOffForNumber($from)
-    {
-
-        // Registrar el número de teléfono recibido
-        \Log::info("Verificando configuración de conversación para el número: $from");
-
-        // Buscar configuración de conversación para el número
-        $config = ConversationConfiguration::where('user_phone', $from)->first();
-
-        if ($config) {
-            \Log::info("Configuración encontrada para $from: conversación habilitada = " . ($config->conversation_enabled ? 'true' : 'false'));
-        } else {
-            \Log::info("No se encontró configuración para el número: $from");
+            // Verifica si la respuesta fue exitosa y devuelve el thread_id
+            if ($response->successful() && isset($responseData['id'])) {
+                return $responseData['id']; // Devuelve el ID del nuevo hilo
+            } else {
+                \Log::error('Error al crear un nuevo hilo en ChatGPT: ' . json_encode($responseData));
+                throw new \Exception('No se pudo crear un nuevo hilo.');
+            }
+        } catch (\Exception $e) {
+            \Log::error('Error en createNewThread(): ' . $e->getMessage());
+            throw $e;
         }
-
-        // Si existe y está deshabilitado, devolver true; de lo contrario, false
-        return $config && !$config->conversation_enabled;
     }
+
+    protected function sendMessageToThread($threadId, $role, $content)
+    {
+    
+        try {
+            $response = \Http::withHeaders([
+                'Authorization' => 'Bearer ' . env('OPENAI_API_KEY'), // Agregar el token de la API
+                'Content-Type' => 'application/json',
+                'OpenAI-Beta' => 'assistants=v2', // Encabezado adicional requerido
+            ])->post("https://api.openai.com/v1/threads/{$threadId}/messages", [
+                'role' => $role, // Por ejemplo, 'user' o 'assistant'
+                'content' => $content,
+            ]);
+            
+            if ($response->successful()) {
+                $responseBody = $response->json();
+                \Log::info("Mensaje enviado al hilo $threadId.");
+                return $responseBody; // Devuelve la respuesta completa
+            } else {
+                $error = $response->json();
+                \Log::error("Error al enviar mensaje al hilo $threadId: " . json_encode($error));
+                return null;
+            }
+        } catch (\Exception $e) {
+            \Log::error("Error en sendMessageToThread(): " . $e->getMessage());
+            return null;
+        }
+    }
+
+    protected function runThread($threadId)
+    {
+        try {
+            // Configurar encabezados y datos de la solicitud
+            $response = \Http::withHeaders([
+                'Authorization' => 'Bearer ' . env('OPENAI_API_KEY'), // Token de la API
+                'Content-Type' => 'application/json',
+                'OpenAI-Beta' => 'assistants=v2', // Requisito para v2
+            ])->post("https://api.openai.com/v1/threads/{$threadId}/runs", [
+                'assistant_id' => 'asst_2m5hxAI9TnpYiMNEpx8a1ziw', // Asistente asociado al run
+            ]);
+
+            // Procesar respuesta
+            if ($response->successful()) {
+                $responseBody = $response->json();
+                \Log::info("Run iniciado exitosamente para threadId: $threadId ");
+                return [
+                    'success' => true,
+                    'data' => $responseBody,
+                ];
+            }
+
+            // Manejo de errores HTTP
+            $error = $response->json() ?? $response->body();
+            \Log::error("Error al iniciar run para threadId: $threadId. Error: " . json_encode($error));
+            return [
+                'success' => false,
+                'error' => $error,
+            ];
+        } catch (\Exception $e) {
+            // Manejo de excepciones generales
+            \Log::error("Excepción al iniciar run: " . $e->getMessage());
+            return [
+                'success' => false,
+                'error' => $e->getMessage(),
+            ];
+        }
+    }
+
+    protected function getMessagesFromThread($threadId)
+    {
+        try {
+            $response = \Http::withHeaders([
+                'Authorization' => 'Bearer ' . env('OPENAI_API_KEY'),
+                'Content-Type' => 'application/json',
+                'OpenAI-Beta' => 'assistants=v2',
+            ])->get("https://api.openai.com/v1/threads/{$threadId}/messages");
+
+            if ($response->successful()) {
+                //\Log::info("Respuesta completa del hilo $threadId: " . json_encode($response->json()));
+                return $response->json()['data']; // Devuelve la lista de mensajes
+            } else {
+                $error = $response->json();
+                \Log::error("Error al obtener mensajes del hilo $threadId: " . json_encode($error));
+                return null;
+            }
+        } catch (\Exception $e) {
+            \Log::error("Error en getMessagesFromThread(): " . $e->getMessage());
+            return null;
+        }
+    }
+
+    protected function getMessageByRunId($threadId,  $runId)
+    {
+        $foundMessage = false;
+
+        while (!$foundMessage) {
+
+            // Obtener todos los mensajes del hilo
+            $messages = $this->getMessagesFromThread($threadId);
+
+            if ($messages) {
+                foreach ($messages as $message) {
+                    // Asegurarse de que el mensaje tenga un `run_id` y coincida con el que buscamos
+                    if (isset($message['run_id']) && $message['run_id'] === $runId) {
+                        // Extraer el valor del contenido
+                        \Log::info("Si consigue el mensaje");
+                        foreach ($message['content'] as $contentItem) {
+                            if ($contentItem['type'] === 'text') {
+                                return $contentItem['text']['value']; // Devuelve el valor del texto
+                            }
+                        }
+                    }
+                }
+            }
+            sleep(2);  // Esperar 1 segundo antes de hacer otro intento
+        }  
+    
+    }
+
+
 }

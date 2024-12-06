@@ -15,6 +15,7 @@ class ConversationConfiguration extends Model
     protected $fillable = [
         'user_phone',
         'conversation_enabled',
+        'thread_id',
     ];
 
     // Opcionalmente, puedes deshabilitar timestamps si no los necesitas
