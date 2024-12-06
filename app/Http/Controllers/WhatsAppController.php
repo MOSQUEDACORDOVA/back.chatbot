@@ -156,12 +156,12 @@ class WhatsAppController extends Controller
 
                     // Guardar cada mensaje en la base de datos
                     //importante, la bd no entiende con tipo de mensaje solo texto, corregir
-                    $this->storeMessage($from, 'assistant', $messageContent);
+                    $this->storeMessage($from, 'assistant', $messageContent, 'assistant');
                 }
             } else {
                 // Si la respuesta no es JSON o no tiene múltiples mensajes, envíala como un solo mensaje
                 $this->sendWhatsAppMessage("Hola Linda, en unos minutos te envío toda la información.", $from);
-                $this->storeMessage($from, 'assistant', $replyContent);
+                $this->storeMessage($from, 'assistant', $replyContent, 'assistant');
                 // Registrar la respuesta para debugging
                 \Log::error('ChatGPT no respondió con un JSON ' . $replyContent);
 
@@ -199,7 +199,7 @@ class WhatsAppController extends Controller
             $reply = "Lo siento, tu consulta es muy extensa, ¿podrias darme más detalles por favor?";
             
             // Guardar la respuesta del asistente en la base de datos
-            $this->storeMessage($from, 'assistant', $reply);
+            $this->storeMessage($from, 'assistant', $reply, 'assistant');
 
             // Enviar la respuesta vía WhatsApp
             $this->sendWhatsAppMessage($reply, $from);
@@ -249,12 +249,10 @@ class WhatsAppController extends Controller
             'user_phone' => $userPhone,
             'role' => $role,
             'message' => $message,
+            'name' => $name,
         ];
 
-        // Agregar 'name' solo si no es nulo
-        if (!is_null($name)) {
-            $data['name'] = $name;
-        }
+        
 
         // Crear el registro en la base de datos
         ConversationHistory::create($data);
