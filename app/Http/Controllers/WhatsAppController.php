@@ -138,7 +138,7 @@ class WhatsAppController extends Controller
                 }
             } else {
                 // Si la respuesta no es JSON o no tiene múltiples mensajes, envíala como un solo mensaje
-                $this->sendWhatsAppMessage("Hola Linda, en unos minutos te envío toda la información.", $from);
+                $this->sendWhatsAppMessage("Hola, en unos minutos te envío toda la información.", $from);
                 $this->storeMessage($from, 'assistant', $replyContent, 'assistant');
                 // Registrar la respuesta para debugging
                 \Log::error('ChatGPT no respondió con un JSON ' . $replyContent);
@@ -174,7 +174,7 @@ class WhatsAppController extends Controller
 
             \Log::error('Error contacting OpenAI API: ' . $e->getMessage());
             
-            $reply = "Hola Linda, en unos minutos te envío toda la información.";
+            $reply = "Hola, en unos minutos te envío toda la información.";
             
             // Guardar la respuesta del asistente en la base de datos
             $this->storeMessage($from, 'assistant', $reply, 'assistant');
@@ -299,7 +299,7 @@ class WhatsAppController extends Controller
                 'Content-Type' => 'application/json',
                 'OpenAI-Beta' => 'assistants=v2', // Requisito para v2
             ])->post("https://api.openai.com/v1/threads/{$threadId}/runs", [
-                'assistant_id' => 'asst_2m5hxAI9TnpYiMNEpx8a1ziw', // Asistente asociado al run
+                'assistant_id' => 'asst_0NzgeR0AD6MNiIiJ4MSGBm28', // Asistente asociado al run
             ]);
 
             // Procesar respuesta
