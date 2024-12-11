@@ -145,7 +145,7 @@ class WhatsAppController extends Controller
 
                 //se debe enviar un mensaje de error al admin
                 $solicitudHuman = 'El cliente: '.$from.' Necesita ayuda. . .';
-                $this->sendWhatsAppMessage($solicitudHuman, "51945692831@c.us");
+                $this->sendWhatsAppMessage($solicitudHuman, "51969647875@c.us");
                 \Log::error('Se solicitó ayuda al administrador ');
 
             }
@@ -164,7 +164,7 @@ class WhatsAppController extends Controller
                         \Log::info('Intervención humana requerida: ' . $actionMessage . 'Cliente: ' . $formattedFrom);
                         
                         // Aquí podrías enviar un mensaje a un agente, registrar una alerta, etc.
-                        $this->sendWhatsAppMessage($actionMessage, "51945692831@c.us");
+                        $this->sendWhatsAppMessage($actionMessage, "51969647875@c.us");
                     }
                 }
             }
@@ -184,7 +184,7 @@ class WhatsAppController extends Controller
 
             //se debe enviar un mensaje de error al admin
             $solicitudHuman = 'El cliente: '.$from.' Necesita ayuda. . .';
-            $this->sendWhatsAppMessage($solicitudHuman, "51945692831@c.us");
+            $this->sendWhatsAppMessage($solicitudHuman, "51969647875@c.us");
 
             return response()->json(['error' => 'Error al comunicarse con la API'], 500);
 
