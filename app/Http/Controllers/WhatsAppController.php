@@ -9,6 +9,7 @@ use App\Models\ConversationHistory; // Modelo para la tabla del historial
 use Illuminate\Support\Facades\Http; // Asegúrate de importar el facade Http
 use App\Models\ConversationConfiguration;
 use Illuminate\Support\Facades\Log;
+use App\Http\Controllers\CURLFile;
 
 class WhatsAppController extends Controller
 {
@@ -16,7 +17,7 @@ class WhatsAppController extends Controller
     public function mensajeRecibido(Request $request)
     {
         // Registrar toda la información que llega desde WhatsApp
-        //\Log::info('Datos recibidos desde WhatsApp: ' . json_encode($request->all()));
+        \Log::info('Datos recibidos desde WhatsApp: ' . json_encode($request->all()));
 
         // Verificar si el mensaje está presente en la estructura de WhatsApp
         if (isset($request->entry[0]['changes'][0]['value']['messages'][0])) {
@@ -67,8 +68,9 @@ class WhatsAppController extends Controller
                 case 'audio':
                     $audioId = $message['audio']['id'];
                     $audioUrl = $this->getMediaUrl($audioId); // Función para obtener la URL del archivo de audio
-                    $body = $audioUrl;
-                    $this->processAudioMessage($audioUrl, $from, $conversationConfiguration->thread_id);
+                    $transcription = $this->transcribeAudio($audioUrl);
+                    $body = $transcription;
+                    $this->chatGpt($body, $from, $conversationConfiguration->thread_id);
                     break;
 
                 default:
@@ -80,7 +82,7 @@ class WhatsAppController extends Controller
             }
             
             // Log de éxito
-            \Log::info("Mensaje recibido de $from: $body para enviar a ChatGPT");
+            \Log::info("Mensaje recibido de $from para enviar a ChatGPT");
 
             return response()->json(['status' => 'Mensaje recibido y procesado']);
         }
@@ -90,8 +92,7 @@ class WhatsAppController extends Controller
 
         //return response()->json(['status' => 'No se recibió un mensaje válido'], 400);
     }
-
-    
+  
     public function chatGpt(string $promt, string $from, string $thread_id)
     {
         // Agregar el mensaje al hilo existente
@@ -220,53 +221,60 @@ class WhatsAppController extends Controller
     }
 
     public function sendWhatsAppMessage(string $message, string $recipient, string $type = 'text', string $caption = null)
-{
-    try {
-        // URL de la API oficial de WhatsApp (asegúrate de que la URL esté correctamente configurada)
-        $url = "https://graph.facebook.com/v21.0/467585689779303/messages"; // Reemplaza con tu ID de teléfono de WhatsApp Business
-        
-        // Tu token de acceso
-        $accessToken = env('WHATSAPP_ACCESS_TOKEN'); // Asegúrate de definir tu token en .env
+    {
+        try {
+            // URL de la API oficial de WhatsApp (asegúrate de que la URL esté correctamente configurada)
+            $url = "https://graph.facebook.com/v21.0/467585689779303/messages"; // Reemplaza con tu ID de teléfono de WhatsApp Business
+            
+            // Tu token de acceso
+            $accessToken = env('WHATSAPP_ACCESS_TOKEN'); // Asegúrate de definir tu token en .env
 
-        // Preparar los datos del mensaje
-        $data = [
-            'messaging_product' => 'whatsapp',
-            'to' => $recipient, // Número de teléfono del destinatario
-            'type' => $type,    // Tipo de mensaje (texto, imagen, etc.)
-        ];
-
-        // Si el tipo de mensaje es texto
-        if ($type == 'text') {
-            $data['text'] = [
-                'body' => $message,
+            // Preparar los datos del mensaje
+            $data = [
+                'messaging_product' => 'whatsapp',
+                'recipient_type'=> 'individual',
+                'to' => $recipient, // Número de teléfono del destinatario
+                'type' => $type,    // Tipo de mensaje (texto, imagen, etc.)
             ];
-        }
 
-        // Si el tipo de mensaje es imagen (opcional)
-        if ($type == 'image' && $caption) {
-            $data['image'] = [
-                'link' => $message, // URL de la imagen
-                'caption' => $caption, // Opcional: descripción de la imagen
-            ];
-        }
+            // Si el tipo de mensaje es texto
+            if ($type == 'text') {
+                $data['text'] = [
+                    'body' => $message,
+                ];
+            }
 
-        // Enviar la solicitud a la API oficial de WhatsApp
-        $response = Http::withToken($accessToken)->post($url, $data);
+            // Si el tipo de mensaje es imagen (opcional)
+            if ($type == 'image' && $caption) {
+                $data['image'] = [
+                    'link' => $message, // URL de la imagen
+                    'caption' => $caption, // Opcional: descripción de la imagen
+                ];
+            }
 
-        // Verifica si la respuesta fue exitosa
-        if ($response->successful()) {
-            return response()->json(['status' => 'success', 'message' => 'Mensaje enviado']);
-        } else {
-            \Log::error("Error sending WhatsApp message: " . $response->body());
+            // Si el tipo de mensaje es audio
+            if ($type == 'audio') {
+                $data['audio'] = [
+                    'link' => $message, // URL del audio
+                ];
+            }
+
+            // Enviar la solicitud a la API oficial de WhatsApp
+            $response = Http::withToken($accessToken)->post($url, $data);
+
+            // Verifica si la respuesta fue exitosa
+            if ($response->successful()) {
+                return response()->json(['status' => 'success', 'message' => 'Mensaje enviado']);
+            } else {
+                \Log::error("Error sending WhatsApp message: " . $response->body());
+                return response()->json(['error' => 'Failed to send message'], 500);
+            }
+        } catch (\Exception $e) {
+            // Maneja el error según sea necesario
+            \Log::error("Error sending WhatsApp message: " . $e->getMessage());
             return response()->json(['error' => 'Failed to send message'], 500);
         }
-    } catch (\Exception $e) {
-        // Maneja el error según sea necesario
-        \Log::error("Error sending WhatsApp message: " . $e->getMessage());
-        return response()->json(['error' => 'Failed to send message'], 500);
     }
-}
-
 
     // Función para almacenar mensajes en la base de datos
     private function storeMessage(string $userPhone, string $role, string $message, ?string $name = null)
@@ -348,7 +356,7 @@ class WhatsAppController extends Controller
                 'Content-Type' => 'application/json',
                 'OpenAI-Beta' => 'assistants=v2', // Requisito para v2
             ])->post("https://api.openai.com/v1/threads/{$threadId}/runs", [
-                'assistant_id' => 'asst_0NzgeR0AD6MNiIiJ4MSGBm28', // Asistente asociado al run
+                'assistant_id' => 'asst_0tpVRNmZWQaBOFWQ4GTREgTq', // Asistente asociado al run
             ]);
 
             // Procesar respuesta
@@ -427,6 +435,105 @@ class WhatsAppController extends Controller
             sleep(2);  // Esperar 1 segundo antes de hacer otro intento
         }  
     
+    }
+
+    protected function getMediaUrl($mediaId)
+    {
+        $accessToken = env('WHATSAPP_ACCESS_TOKEN');
+        $url = "https://graph.facebook.com/v21.0/$mediaId";
+
+        $response = Http::withToken($accessToken)->get($url);
+
+        if ($response->successful() && isset($response['url'])) {
+            \Log::info("URL del archivo de audio: " . $response['url']);
+            return $response['url'];
+        }
+
+        \Log::error("Error al obtener la URL del archivo de audio: " . $response->body());
+        return null;
+    }
+
+    protected function transcribeAudio($audioUrl)
+    {
+        // Descargar el archivo de audio
+        $audioFilePath = $this->downloadMedia($audioUrl);
+        
+        if (!$audioFilePath) {
+            \Log::error("No se pudo descargar el archivo de audio desde la URL: " . $audioFilePath);
+            return response()->json(['error' => 'No se pudo descargar el archivo de audio'], 500);
+        }
+        
+        \Log::info("Archivo de audio descargado en: " . $audioFilePath);
+    
+        $apiKey = env('OPENAI_API_KEY'); // Obtener la clave API desde el archivo .env
+        if (!$apiKey) {
+            \Log::error("No se encontró la clave API de OpenAI en el archivo .env.");
+            return response()->json(['error' => 'API key no configurada'], 500);
+        }
+    
+        // Realizar la solicitud POST
+        try {
+            \Log::info("Enviando solicitud de transcripción al API de OpenAI.");
+            
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . $apiKey,
+            ])->attach(
+                'file', file_get_contents($audioFilePath), 'audio.mp3'
+            )->post('https://api.openai.com/v1/audio/transcriptions', [
+                'model' => 'whisper-1',
+            ]);
+    
+            // Verificar la respuesta
+            if ($response->successful()) {
+                \Log::info("Transcripción exitosa: " . $response->json()['text']);
+                // Aquí puedes eliminar el archivo temporal si ya no lo necesitas
+                unlink($audioFilePath);
+                
+                return $response->json()['text']; // Devuelve la transcripción
+            } else {
+                \Log::error("Error en la respuesta de OpenAI: " . $response->body());
+                return response()->json(['error' => 'No se pudo transcribir el audio', 'details' => $response->body()], 500);
+            }
+        } catch (\Exception $e) {
+            \Log::error("Excepción al realizar la solicitud: " . $e->getMessage());
+            return response()->json(['error' => 'Error interno en el servidor'], 500);
+        }
+    }
+    
+    protected function downloadMedia($mediaUrl)
+    {
+        try {
+
+            // El token de acceso de WhatsApp (deberías almacenarlo en tu archivo .env)
+            $accessToken = env('WHATSAPP_ACCESS_TOKEN');
+
+            // Realizar la solicitud GET para descargar el archivo multimedia
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . $accessToken
+            ])->get($mediaUrl);
+
+            // Verificar si la solicitud fue exitosa
+            if ($response->successful()) {
+                // Obtener el tipo MIME del archivo desde los encabezados de la respuesta
+                $contentType = $response->header('Content-Type');
+
+                // Definir la ruta para guardar el archivo (puedes cambiar la extensión según el tipo MIME)
+                $filePath = storage_path('app/audio_' . uniqid() . '.ogg'); // O ajusta según el tipo MIME
+
+                // Guardar los datos binarios del archivo en el servidor
+                file_put_contents($filePath, $response->body());
+
+                
+                // Devolver la ruta donde se guardó el archivo
+                return $filePath;
+            } else {
+                \Log::error("Error al descargar el archivo multimedia: " . $response->body());
+                return null;
+            }
+        } catch (\Exception $e) {
+            \Log::error("Excepción al descargar el archivo multimedia: " . $e->getMessage());
+            return null;
+        }
     }
 
 
