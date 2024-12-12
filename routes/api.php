@@ -10,9 +10,20 @@ Route::get('/user', function (Request $request) {
     return $request->user();
 })->middleware('auth:sanctum');
 
-//Route::post('/chat-bot', [ChatBotController::class, 'listenToReplies']);
+Route::get('/webhook/whatsapp', function (Request $request) {
 
-Route::post('/webhook/whatsapp', [WhatsAppController::class, 'receiveMessage']);
+    $verifyToken = 'mi_token_secreto'; // Token definido por ti.
+
+    // Verifica que el token recibido coincida
+    if ($request->input('hub_mode') === 'subscribe' &&
+        $request->input('hub_verify_token') === $verifyToken) {
+        return response($request->input('hub_challenge'), 200); // Devuelve el 'hub_challenge'
+    }
+
+    return response('Verificación fallida', 403); // Si no coincide, devuelve un error 403.
+});
+
+Route::post('/webhook/whatsapp', [WhatsAppController::class, 'mensajeRecibido']);
 
 Route::post('/webhook/bot-toggle', [ConversationConfigurationController::class, 'toggleBot']);
 

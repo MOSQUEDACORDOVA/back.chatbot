@@ -13,84 +13,56 @@ use Illuminate\Support\Facades\Log;
 class WhatsAppController extends Controller
 {
 
-    public function mensajeRecibido(Request $request)
+    public function receiveMessage(Request $request)
     {
-        // Registrar toda la información que llega desde WhatsApp
-        //\Log::info('Datos recibidos desde WhatsApp: ' . json_encode($request->all()));
+        // Registrar toda la información que llega desde Baileys
+        \Log::info('Datos recibidos desde Baileys: ' . json_encode($request->all()));
+    
+        // Verificar si el mensaje está presente
+        if ($request->has('Body') and $request->input('From')!='status@broadcast') {
+            $from = $request->input('From'); // Número de quien envía el mensaje
+            $body = $request->input('Body') ?? 'Ve al grano y ofrece el producto'; // Cuerpo del mensaje recibido
+            $name = $request->input('Name', 'Desconocido'); // Obtener el nombre, o usar 'Desconocido' si no está presente
 
-        // Verificar si el mensaje está presente en la estructura de WhatsApp
-        if (isset($request->entry[0]['changes'][0]['value']['messages'][0])) {
-            
-            // Obtener el mensaje recibido
-            $message = $request->entry[0]['changes'][0]['value']['messages'][0];        
-            
-            // Extraer el número del remitente y el contenido del mensaje
-            $from = $message['from']; // Número de quien envía el mensaje
+            // Guardar el mensaje del usuario en la base de datos
+            $this->storeMessage($from, 'user', $body, $name);
 
-            // Verificar si el bot está habilitado para este número
+            // Log de éxito
+            \Log::info("Mensaje recibido de $from: $body para enviar a ChatGPT");
+    
             $conversationConfiguration = ConversationConfiguration::where('user_phone', $from)->first(['conversation_enabled', 'thread_id']);
 
             // Verificar si el bot está APAGADO para este número
             if ($conversationConfiguration && !$conversationConfiguration->conversation_enabled) {
-                \Log::info("El bot está APAGADO para el número $from. No se procesará el mensaje.");
-                return response()->json(['status' => "El bot está APAGADO para el número $from. No se procesará el mensaje."], 403);
+                Log::info("El bot está APAGADO para el número $from. No se procesará el mensaje.");
+                return response()->json(['status' => 'El bot está APAGADO para el número $from. No se procesará el mensaje.'], 403);
             }
-
-            // Si no existe configuración, crear un nuevo hilo de conversación
+            
             if (!$conversationConfiguration) {
                 $threadId = $this->createNewThread();
-                \Log::info("Nuevo hilo creado para el número $from con thread_id: $threadId");
-
+                Log::info("Nuevo hilo creado para el número $from con thread_id: $threadId");
+            
                 $conversationConfiguration = ConversationConfiguration::create([
                     'user_phone' => $from,
                     'conversation_enabled' => true,
                     'thread_id' => $threadId,
                 ]);
-            } else {
+            }else {
                 \Log::info("Configuración existente encontrada para $from. thread_id: " . $conversationConfiguration->thread_id);
             }
 
-            // Extraer el nombre del remitente (si está disponible)
-            $name = isset($request->entry[0]['changes'][0]['value']['contacts'][0]['profile']['name'])
-                    ? $request->entry[0]['changes'][0]['value']['contacts'][0]['profile']['name']
-                    : 'Desconocido'; // Si no hay nombre, se usa 'Desconocido'
+            // Llamar a ChatGPT utilizando el thread_id
+            $this->chatGpt($body, $from, $conversationConfiguration->thread_id);
 
             
-
-            switch ($message['type']) {
-                case 'text':
-                    $body = $message['text']['body'] ?? 'Ve al grano y ofrece el producto'; // Cuerpo del mensaje recibido
-                    // Llamar a ChatGPT utilizando el thread_id
-                    $this->chatGpt($body, $from, $conversationConfiguration->thread_id);
-                    break;
-
-                case 'audio':
-                    $audioId = $message['audio']['id'];
-                    $audioUrl = $this->getMediaUrl($audioId); // Función para obtener la URL del archivo de audio
-                    $body = $audioUrl;
-                    $this->processAudioMessage($audioUrl, $from, $conversationConfiguration->thread_id);
-                    break;
-
-                default:
-                    $body = 'El usuario envió un tipo de mensaje no soportado, quizá un video o una imagen o algo por el estilo, explicale que no logras entender el mensaje que envió.'; // Cuerpo del mensaje recibido
-                    // Llamar a ChatGPT utilizando el thread_id
-                    $this->chatGpt($body, $from, $conversationConfiguration->thread_id);
-                    \Log::info("Tipo de mensaje no manejado: " . $message['type']);
-                    break;
-            }
-            
-            // Log de éxito
-            \Log::info("Mensaje recibido de $from: $body para enviar a ChatGPT");
-
-            return response()->json(['status' => 'Mensaje recibido y procesado']);
+            return response()->json(['status' => 'Message received and processed']);
         }
-
-        // Log de mensaje no válido
-        //\Log::warning("Mensaje no válido recibido: " . json_encode($request->all()));
-
-        //return response()->json(['status' => 'No se recibió un mensaje válido'], 400);
+    
+        // Log de no válido
+        \Log::warning("Mensaje no válido recibido: " . json_encode($request->all()));
+    
+        return response()->json(['status' => 'No valid message received'], 400);
     }
-
     
     public function chatGpt(string $promt, string $from, string $thread_id)
     {
@@ -220,53 +192,32 @@ class WhatsAppController extends Controller
     }
 
     public function sendWhatsAppMessage(string $message, string $recipient, string $type = 'text', string $caption = null)
-{
-    try {
-        // URL de la API oficial de WhatsApp (asegúrate de que la URL esté correctamente configurada)
-        $url = "https://graph.facebook.com/v21.0/467585689779303/messages"; // Reemplaza con tu ID de teléfono de WhatsApp Business
-        
-        // Tu token de acceso
-        $accessToken = env('WHATSAPP_ACCESS_TOKEN'); // Asegúrate de definir tu token en .env
+    {
+        try {
+            // URL de tu API de Baileys
+            $url = env('BAILEYS_API_URL') . '/send'; // Define esta URL en tu archivo .env
 
-        // Preparar los datos del mensaje
-        $data = [
-            'messaging_product' => 'whatsapp',
-            'to' => $recipient, // Número de teléfono del destinatario
-            'type' => $type,    // Tipo de mensaje (texto, imagen, etc.)
-        ];
+            // Preparar la solicitud
+            $response = Http::post($url, [
+                'chatId' => $recipient,
+                'message' => $message,
+                'type' => $type,
+                'caption' => $caption, // El caption es opcional
+            ]);
 
-        // Si el tipo de mensaje es texto
-        if ($type == 'text') {
-            $data['text'] = [
-                'body' => $message,
-            ];
-        }
-
-        // Si el tipo de mensaje es imagen (opcional)
-        if ($type == 'image' && $caption) {
-            $data['image'] = [
-                'link' => $message, // URL de la imagen
-                'caption' => $caption, // Opcional: descripción de la imagen
-            ];
-        }
-
-        // Enviar la solicitud a la API oficial de WhatsApp
-        $response = Http::withToken($accessToken)->post($url, $data);
-
-        // Verifica si la respuesta fue exitosa
-        if ($response->successful()) {
-            return response()->json(['status' => 'success', 'message' => 'Mensaje enviado']);
-        } else {
-            \Log::error("Error sending WhatsApp message: " . $response->body());
+            // Verifica si la respuesta fue exitosa
+            if ($response->successful()) {
+                return response()->json(['status' => 'success', 'message' => 'Mensaje enviado']);
+            } else {
+                \Log::error("Error sending WhatsApp message: " . $response->body());
+                return response()->json(['error' => 'Failed to send message'], 500);
+            }
+        } catch (\Exception $e) {
+            // Maneja el error según sea necesario
+            \Log::error("Error sending WhatsApp message: " . $e->getMessage());
             return response()->json(['error' => 'Failed to send message'], 500);
         }
-    } catch (\Exception $e) {
-        // Maneja el error según sea necesario
-        \Log::error("Error sending WhatsApp message: " . $e->getMessage());
-        return response()->json(['error' => 'Failed to send message'], 500);
     }
-}
-
 
     // Función para almacenar mensajes en la base de datos
     private function storeMessage(string $userPhone, string $role, string $message, ?string $name = null)
