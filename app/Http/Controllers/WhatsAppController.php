@@ -536,5 +536,51 @@ class WhatsAppController extends Controller
         }
     }
 
+    protected function convertTextToSpeech($text)
+    {
+
+        $model = 'tts-1'; // Modelo definido por OpenAI
+        $voice = 'nova'; // Voz predeterminada
+        $apiKey = env('OPENAI_API_KEY'); // Asegúrate de tener configurada la clave en tu .env
+
+        try {
+            // Realiza la solicitud a la API de OpenAI
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . $apiKey,
+                'Content-Type' => 'application/json',
+            ])->post('https://api.openai.com/v1/audio/speech', [
+                'model' => $model,
+                'input' => $text,
+                'voice' => $voice,
+            ]);
+
+            // Verifica si la solicitud fue exitosa
+            if ($response->successful()) {
+                // Definir la ruta para guardar el archivo (puedes cambiar la extensión según el tipo MIME)
+                $filePath = storage_path('app/audio_' . uniqid() . '.ogg'); // O ajusta según el tipo MIME
+
+                // Guardar los datos binarios del archivo en el servidor
+                file_put_contents($filePath, $response->body());
+                
+                // Devolver la ruta donde se guardó el archivo
+                return $filePath;
+
+            } else {
+                // Maneja errores
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Error al convertir el texto a voz.',
+                    'error' => $response->json(),
+                ], $response->status());
+            }
+        } catch (\Exception $e) {
+            // Manejo de excepciones
+            return response()->json([
+                'success' => false,
+                'message' => 'Error en la solicitud.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
 
 }
