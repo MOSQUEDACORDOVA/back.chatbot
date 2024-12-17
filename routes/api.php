@@ -6,10 +6,6 @@ use App\Http\Controllers\WhatsAppController;
 use App\Http\Controllers\ConversationConfigurationController;
 use App\Http\Controllers\ChatGPTController; //SOLO PARA PRUEBAS
 
-Route::get('/user', function (Request $request) {
-    return $request->user();
-})->middleware('auth:sanctum');
-
 Route::get('/webhook/whatsapp', function (Request $request) {
 
     $verifyToken = 'mi_token_secreto'; // Token definido por ti.
@@ -25,6 +21,9 @@ Route::get('/webhook/whatsapp', function (Request $request) {
 
 Route::post('/webhook/whatsapp', [WhatsAppController::class, 'mensajeRecibido']);
 
+//Deshabilitar si interfire un humano
 Route::post('/webhook/bot-toggle', [ConversationConfigurationController::class, 'toggleBot']);
 
 Route::post('/chatgpt', [ChatGPTController::class, 'chat']); //solo para pruebas 
+
+Route::post('/webhook/whatsapp/twilio', [WhatsAppController::class, 'twilioReceiveMessage']);
