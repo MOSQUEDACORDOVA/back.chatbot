@@ -1,5 +1,5 @@
 
 
-## About BWOL
+## CONSIDERACIONES
 
-V 1.0
+- Eliminte la opción caption xq hice una nueva actualizacion, debo reintegrarla

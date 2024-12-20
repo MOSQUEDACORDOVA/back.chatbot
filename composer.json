@@ -11,7 +11,7 @@
         "laravel/reverb": "^1.0",
         "laravel/sanctum": "^4.0",
         "laravel/tinker": "^2.9",
-        "openai-php/laravel": "^0.10.1",
+        "openai-php/laravel": "^0.10.2",
         "twilio/sdk": "^8.3"
     },
     "require-dev": {

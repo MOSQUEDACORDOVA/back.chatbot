@@ -5,6 +5,9 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\WhatsAppController;
 use App\Http\Controllers\ConversationConfigurationController;
 use App\Http\Controllers\ChatGPTController; //SOLO PARA PRUEBAS
+use App\Http\Controllers\WeatherAssistantController;
+
+Route::post('/weather', [WeatherAssistantController::class, 'askWeather']);
 
 Route::get('/webhook/whatsapp', function (Request $request) {
 
