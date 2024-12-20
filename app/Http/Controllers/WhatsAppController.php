@@ -158,10 +158,14 @@ class WhatsAppController extends Controller
         
     }
 
-    public function chatGpt($promt, string $from, string $thread_id)
+    public function chatGpt($promt, string $from, string $thread_id, string $assistants_id = null, string $role = 'user')
     {
 
-        $messageValue = $this->correrChatGpt($thread_id, 'user', $promt);
+        // Si $assistants_id es nulo, asigna el valor predeterminado desde el .env
+        $assistants_id = $assistants_id ?? env('PRIMARY_ASSISTANT_ID');
+        \Log::info("Assistant ID: " . $assistants_id);
+        
+        $messageValue = $this->correrChatGpt($thread_id, $role, $promt);
 
         if($messageValue){
             try {
@@ -180,60 +184,49 @@ class WhatsAppController extends Controller
     
                 $tieneMensajes='no';
                 // Verificar si el formato es JSON y contiene mensajes
-                if (isset($replyData['mensajes']) && is_array($replyData['mensajes'])) {
+                if (isset($replyData['message'])) {
+                    $messageTypeResponde = $replyData['type'];
+
                     $tieneMensajes='si';
-                    // Iterar sobre los mensajes y enviarlos individualmente
-                    foreach ($replyData['mensajes'] as $msg) {
-    
-                        $messageType = $msg['type'];
-                        // Lógica para determinar el contenido del mensaje
-                        if (in_array($messageType, ['video', 'audio', 'image'])) {
-                            // Si el tipo es video, audio o imagen, la URL se encuentra en 'message'
-                            $messageContent = $msg['url'];
-                        } else {
-                            // Para otros tipos, el contenido del mensaje es simplemente el texto
-                            $messageContent = $msg['message'];
-                        }
-                        $caption = $msg['caption'] ?? null; // Opcional
-    
-                        // Lógica de envío basada en el tipo de mensaje
-                        $this->sendWhatsAppMessage($messageContent, $from, $messageType, $caption);
-    
-                        // Guardar cada mensaje en la base de datos
-                        //importante, la bd no entiende con tipo de mensaje solo texto, corregir
-                        $this->storeMessage($from, 'assistant', $messageContent, 'assistant');
+                        
+                    // Lógica para determinar el contenido del mensaje
+                    if (in_array($replyData['type'], ['video', 'audio', 'image'])) {
+                        // Si el tipo es video, audio o imagen, la URL se encuentra en 'message'
+                        $messageContent = $replyData['url'];
+                    } else {
+                        // Para otros tipos, el contenido del mensaje es simplemente el texto
+                        $messageContent = $replyData['message'];
                     }
+
+                    $caption = $msg['caption'] ?? null; // Opcional
+    
+                    // Lógica de envío basada en el tipo de mensaje
+                    $this->sendWhatsAppMessage($messageContent, $from, $replyData['type'], $caption);
+    
+                    // Guardar cada mensaje en la base de datos
+                    //importante, la bd no entiende con tipo de mensaje solo texto, corregir
+                    $this->storeMessage($from, 'assistant', $messageContent, 'assistant');
+
                 } 
 
                 if(isset($replyData['propertyId'])){
                     \Log::info('Codigo de propiedad: ' . $replyData['propertyId']);
                     //Consultar api
                     $datosPropiedad = $this->getPropertyDetails($replyData['propertyId']);
-                    \Log::info('Datos propiedad: ' . json_encode($datosPropiedad));
-                    //Llamar a chatgpt nuevamente 
-                    $this->chatGpt($datosPropiedad, $from, $thread_id);
-                    return;
-                }
-
-                if($tieneMensajes=='no') {
-                    // Si la respuesta no es JSON o no tiene múltiples mensajes, envíala como un solo mensaje
-                    $this->sendWhatsAppMessage("Hola, en unos minutos te envío toda la información.", $from);
-                    $this->storeMessage($from, 'assistant', $replyContent, 'assistant');
-                    // Registrar la respuesta para debugging
-                    \Log::error('ChatGPT no respondió con un JSON ' . $replyContent);
-    
-                    //se debe enviar un mensaje de error al admin
-                    $solicitudHuman = 'El cliente: '.$from.' Necesita ayuda. . .';
-                    if(env('API_MENSAJES')=="TWILIO"){
-                        $this->sendWhatsAppMessage($solicitudHuman, "whatsapp:+51945692831");
+                    if($datosPropiedad){
+                        \Log::info('Datos propiedad: ' . json_encode($datosPropiedad));
+                        //Llamar a chatgpt nuevamente 
+                        sleep(2);
+                        $this->chatGpt($datosPropiedad, $from, $thread_id, null, 'assistant');
                     }else{
-                        $this->sendWhatsAppMessage($solicitudHuman, "51945692831@c.us");
+                        \Log::info('No tenemos esos datos: ' . json_encode($datosPropiedad));
+                        // Si la respuesta no es JSON o no tiene múltiples mensajes, envíala como un solo mensaje
+                        $this->sendWhatsAppMessage("Sorry, we don't have the information you're requesting.", $from);
                     }
                     
-                    \Log::error('Se solicitó ayuda al administrador ');
-    
+                    return;
                 }
-    
+                    
                 if (isset($replyData['acciones']) && is_array($replyData['acciones'])) {
                     foreach ($replyData['acciones'] as $action) {
                         $actionType = $action['type'];
@@ -255,6 +248,25 @@ class WhatsAppController extends Controller
                             }
                         }
                     }
+                }
+
+                if($tieneMensajes=='no') {
+                    // Si la respuesta no es JSON o no tiene múltiples mensajes, envíala como un solo mensaje
+                    $this->sendWhatsAppMessage("Hola, en unos minutos te envío toda la información.", $from);
+                    $this->storeMessage($from, 'assistant', $replyContent, 'assistant');
+                    // Registrar la respuesta para debugging
+                    \Log::error('ChatGPT no respondió con un JSON ' . $replyContent);
+    
+                    //se debe enviar un mensaje de error al admin
+                    $solicitudHuman = 'El cliente: '.$from.' Necesita ayuda. . .';
+                    if(env('API_MENSAJES')=="TWILIO"){
+                        $this->sendWhatsAppMessage($solicitudHuman, "whatsapp:+51945692831");
+                    }else{
+                        $this->sendWhatsAppMessage($solicitudHuman, "51945692831@c.us");
+                    }
+                    
+                    \Log::error('Se solicitó ayuda al administrador ');
+    
                 }
     
                 return response()->json(['reply' => $replyContent]);
@@ -376,7 +388,7 @@ class WhatsAppController extends Controller
 
     private function correrChatGpt($thread_id, $role, $promt){
         // Agregar el mensaje al hilo existente
-        $sendMessageResult = $this->sendMessageToThread($thread_id, 'user', $promt);
+        $sendMessageResult = $this->sendMessageToThread($thread_id, $role, $promt);
 
         if ($sendMessageResult) {
             // Verificar que el mensaje se haya agregado con éxito
@@ -459,7 +471,7 @@ class WhatsAppController extends Controller
                 'Content-Type' => 'application/json',
                 'OpenAI-Beta' => 'assistants=v2', // Encabezado adicional requerido
             ])->post("https://api.openai.com/v1/threads/{$threadId}/messages", [
-                'role' => $role, // Por ejemplo, 'user' o 'assistant'
+                'role' => $role, 
                 'content' => json_encode($content),
             ]);
             
