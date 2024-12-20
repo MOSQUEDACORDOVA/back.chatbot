@@ -5,7 +5,7 @@ namespace App\Services;
 use OpenAI\Laravel\Facades\OpenAI;
 use Illuminate\Support\Facades\Log;
 
-class OpenAIAssistantService
+class OpenAIAssistantServiceDamaris
 {
 
     // Crear un hilo y enviar el mensaje del usuario

@@ -10,14 +10,14 @@ use Illuminate\Support\Facades\Http; // Asegúrate de importar el facade Http
 use App\Models\ConversationConfiguration;
 use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\CURLFile;
-use App\Services\OpenAIAssistantService;
+use App\Services\OpenAIAssistantServiceDamaris;
 
 class WhatsAppController extends Controller
 {
 
     protected $assistantService;
 
-    public function __construct(OpenAIAssistantService $assistantService)
+    public function __construct(OpenAIAssistantServiceDamaris $assistantService)
     {
         $this->assistantService = $assistantService;
     }
@@ -160,7 +160,7 @@ class WhatsAppController extends Controller
         
     }
 
-    public function chatGpt($promt, string $from, string $thread_id, string $assistants_id = null, string $role = 'user')
+    private function chatGpt($promt, string $from, string $thread_id, string $assistants_id = null, string $role = 'user')
     {
 
         // Si $assistants_id es nulo, asigna el valor predeterminado desde el .env
@@ -180,13 +180,24 @@ class WhatsAppController extends Controller
                 $type = $messageData['type'];       // El tipo del mensaje (ej. "text")
 
                 Log::info('Respuesta de ChatGpt: ' . $message);
-                // Lógica de envío basada en el tipo de mensaje
-                //por ahora solo text hasta mejorar funciones
-                $this->sendWhatsAppMessage($message, $from, $type);
-    
-                // Guardar cada mensaje en la base de datos
-                //importante, la bd no entiende con tipo de mensaje solo texto, corregir
-                $this->storeMessage($from, 'assistant', $messageValue, 'assistant');
+
+                // Dividir el mensaje por saltos de línea
+                $messageParts = explode("\n", $message);
+
+                if($type == 'text'){
+                    // Enviar cada fragmento como un mensaje independiente
+                    foreach ($messageParts as $part) {
+                        if (trim($part) !== '') { // Asegurarse de que no se envíen líneas vacías
+                            $this->sendWhatsAppMessage($part, $from, $type);
+                            //importante, la bd solo entiende con tipo de mensaje solo texto, corregir
+                            $this->storeMessage($from, 'assistant', $messageValue, 'assistant');
+                        }
+                    }
+                }
+                if($type == 'audio'){
+                    \Log::error('Todavia no podemos enviar audio');
+                }
+                
     
             } catch (\Exception $e) {
     
@@ -206,10 +217,7 @@ class WhatsAppController extends Controller
                     $this->sendWhatsAppMessage($solicitudHuman, "whatsapp:+51945692831");
                 }else{
                     $this->sendWhatsAppMessage($solicitudHuman, "51945692831@c.us");
-                }
-    
-                return response()->json(['error' => 'Error al comunicarse con la API'], 500);
-    
+                }    
             }
         }else{
             \Log::info("Algo malo salió con chatgpt, se debe mejorar este msj de error");
@@ -494,41 +502,6 @@ class WhatsAppController extends Controller
         }
     }
 
-    private function getPropertyDetails($propertyId)
-    {
-        // Construir la URL con el propertyId
-        $url = "http://qmsapi-b0g9adbfbncygua0.canadacentral-01.azurewebsites.net/api/Properties?propertyId={$propertyId}";
-
-        try {
-            // Realizar la solicitud GET
-            $response = Http::get($url);
-
-            // Verificar si la respuesta es exitosa
-            if ($response->successful()) {
-                // Obtener los datos de la respuesta
-                $data = $response->json();
-                return $data;
-            } elseif ($response->clientError()) {
-                // Error del lado del cliente (4xx)
-                Log::error('Error del cliente al obtener detalles de la propiedad', ['propertyId' => $propertyId, 'status' => $response->status(), 'response' => $response->body()]);
-                return response()->json(['error' => 'Error del cliente al obtener la información del propertyId'], 400);
-            } elseif ($response->serverError()) {
-                // Error del servidor (5xx)
-                Log::error('Error del servidor al obtener detalles de la propiedad', ['propertyId' => $propertyId, 'status' => $response->status(), 'response' => $response->body()]);
-                return response()->json(['error' => 'Error del servidor al obtener la información del propertyId'], 500);
-            } else {
-                // Otro tipo de error no esperado
-                Log::error('Respuesta inesperada al obtener detalles de la propiedad', ['propertyId' => $propertyId, 'status' => $response->status(), 'response' => $response->body()]);
-                return response()->json(['error' => 'Error inesperado al obtener la información del propertyId'], 500);
-            }
-        } catch (\Exception $e) {
-            // Manejo de excepciones (errores de red, no disponible, etc.)
-            Log::error('Error de conexión al obtener detalles de la propiedad', [
-                'propertyId' => $propertyId,
-                'exception' => $e->getMessage()
-            ]);
-            return response()->json(['error' => 'No se pudo conectar al servicio de propiedades'], 503);
-        }
-    }
+    
 
 }
