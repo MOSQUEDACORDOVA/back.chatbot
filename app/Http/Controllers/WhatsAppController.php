@@ -25,7 +25,7 @@ class WhatsAppController extends Controller
     public function mensajeRecibido(Request $request)
     {
         // Registrar toda la información que llega desde WhatsApp
-        \Log::info('Datos recibidos desde WhatsApp: ' . json_encode($request->all()));
+        //\Log::info('Datos recibidos desde WhatsApp: ' . json_encode($request->all()));
 
         // Verificar si el mensaje está presente en la estructura de WhatsApp
         if (isset($request->entry[0]['changes'][0]['value']['messages'][0])) {
@@ -168,7 +168,7 @@ class WhatsAppController extends Controller
         \Log::info("Assistant ID: " . $assistants_id);
         
         $messageValue = $this->assistantService->handleMessage($promt,$assistants_id,$thread_id, $role);
-
+        \Log::info("Mensaje en json: " . $messageValue);
         
 
         if($messageValue){
@@ -179,7 +179,7 @@ class WhatsAppController extends Controller
                 $message = $messageData['message']; // El mensaje real
                 $type = $messageData['type'];       // El tipo del mensaje (ej. "text")
 
-                Log::info('Respuesta de ChatGpt: ' . $message);
+                Log::info('Respuesta de ChatGpt messageData: ' . $message);
 
                 // Dividir el mensaje por saltos de línea
                 $messageParts = explode("\n", $message);
@@ -190,34 +190,39 @@ class WhatsAppController extends Controller
                         if (trim($part) !== '') { // Asegurarse de que no se envíen líneas vacías
                             $this->sendWhatsAppMessage($part, $from, $type);
                             //importante, la bd solo entiende con tipo de mensaje solo texto, corregir
-                            $this->storeMessage($from, 'assistant', $messageValue, 'assistant');
+                            $this->storeMessage($from, 'assistant', $message, 'assistant');
                         }
                     }
                 }
+
                 if($type == 'audio'){
-                    \Log::error('Todavia no podemos enviar audio');
+                    \Log::info('ChatGPT Desea enviar un audio: '.$message);
+
+                    $this->storeMessage($from, 'assistant', $message, 'assistant');
+
+                    $result = $this->convertTextToSpeech($message);
+                    //$audioUrl = 'https://dev.chatbot.c2.mosquedacordova.com/audio_6766f11ad15a3.mp3';
+                    //$audioUrl =  'https://cdn.mosquedacordova.com/c2/p1a2.ogg';
+                    
+                    if (isset($result['url']) && isset($result['path'])) {
+                        $audioUrl = $result['url']; // URL pública del archivo
+                        $audioPath = $result['path']; // Ruta en el servidor para eliminarlo más tarde
+                    
+                        // Ejemplo: eliminar el archivo después de usarlo
+                        //unlink($audioPath); // Esto elimina el archivo del servidor
+                        $this->sendWhatsAppMessage($audioUrl, $from, 'audio', null, $audioPath);
+                    }else {
+                        // Manejo de errores
+                        \Log::error('Error al generar el archivo de audio.');
+                    }
+                    
                 }
                 
     
             } catch (\Exception $e) {
     
-                \Log::error('Error contacting OpenAI API: ' . $e->getMessage());
-                
-                $reply = "Hola, en unos minutos te envío toda la información.";
-                
-                // Guardar la respuesta del asistente en la base de datos
-                $this->storeMessage($from, 'assistant', $reply, 'assistant');
-    
-                // Enviar la respuesta vía WhatsApp
-                $this->sendWhatsAppMessage($reply, $from);
-    
-                //se debe enviar un mensaje de error al admin
-                $solicitudHuman = 'El cliente: '.$from.' Necesita ayuda. . .';
-                if(env('API_MENSAJES')=="TWILIO"){
-                    $this->sendWhatsAppMessage($solicitudHuman, "whatsapp:+51945692831");
-                }else{
-                    $this->sendWhatsAppMessage($solicitudHuman, "51945692831@c.us");
-                }    
+                \Log::error('Error contacting OpenAI API: ' . $e->getMessage());                  
+
             }
         }else{
             \Log::info("Algo malo salió con chatgpt, se debe mejorar este msj de error");
@@ -225,7 +230,7 @@ class WhatsAppController extends Controller
         
     }
 
-    public function sendWhatsAppMessage(string $message, string $recipient, string $type = 'text', string $caption = null)
+    public function sendWhatsAppMessage(string $message, string $recipient, string $type = 'text', string $caption = null, $filePath = null)
     {
         $apiMensajeria = env('API_MENSAJES');
 
@@ -235,7 +240,7 @@ class WhatsAppController extends Controller
                 break;
 
             default:
-                $this->sendToWhatsAppOficial($message, $recipient, $type, $caption);
+                $this->sendToWhatsAppOficial($message, $recipient, $type, $caption, $filePath);
                 break;
         }
         
@@ -258,8 +263,9 @@ class WhatsAppController extends Controller
         }
     }
 
-    private function sendToWhatsAppOficial(string $message, string $recipient, string $type = 'text', string $caption = null){
+    private function sendToWhatsAppOficial(string $message, string $recipient, string $type = 'text', string $caption = null, $filePath = null){
         try {
+            
             // URL de la API oficial de WhatsApp (asegúrate de que la URL esté correctamente configurada)
             $url = "https://graph.facebook.com/v21.0/467585689779303/messages"; // Reemplaza con tu ID de teléfono de WhatsApp Business
             
@@ -301,6 +307,8 @@ class WhatsAppController extends Controller
 
             // Verifica si la respuesta fue exitosa
             if ($response->successful()) {
+                \Log::info('Mensaje enviado: '.$message);
+                
                 return response()->json(['status' => 'success', 'message' => 'Mensaje enviado']);
             } else {
                 \Log::error("Error sending WhatsApp message: " . $response->body());
@@ -459,7 +467,7 @@ class WhatsAppController extends Controller
     {
 
         $model = 'tts-1'; // Modelo definido por OpenAI
-        $voice = 'nova'; // Voz predeterminada
+        $voice = 'alloy'; // Voz predeterminada
         $apiKey = env('OPENAI_API_KEY'); // Asegúrate de tener configurada la clave en tu .env
 
         try {
@@ -475,14 +483,24 @@ class WhatsAppController extends Controller
 
             // Verifica si la solicitud fue exitosa
             if ($response->successful()) {
-                // Definir la ruta para guardar el archivo (puedes cambiar la extensión según el tipo MIME)
-                $filePath = storage_path('app/audio_' . uniqid() . '.ogg'); // O ajusta según el tipo MIME
 
-                // Guardar los datos binarios del archivo en el servidor
+                // Guarda el archivo directamente en la carpeta `public`
+                $fileName = 'audio_' . uniqid() . '.mp3'; // Nombre único
+                $filePath = public_path($fileName); // Ruta completa en la carpeta `public`
+
+                // Guarda los datos binarios en el directorio público
                 file_put_contents($filePath, $response->body());
-                
-                // Devolver la ruta donde se guardó el archivo
-                return $filePath;
+
+                // Genera la URL pública
+                $publicUrl = url($fileName);
+
+                //\Log::info("Archivo de voz generado: " . $publicUrl);
+
+                // Devuelve tanto la URL como la ruta
+                return [
+                    'url' => $publicUrl,
+                    'path' => $filePath
+                ];
 
             } else {
                 // Maneja errores
@@ -500,6 +518,23 @@ class WhatsAppController extends Controller
                 'error' => $e->getMessage(),
             ], 500);
         }
+    }
+
+    protected function solicitarIntervencionHumana($from,){
+
+        $reply = "Tenemos un inconveniente, un administrador te contactará en breve.";
+                
+        // Guardar la respuesta del asistente en la base de datos
+        $this->storeMessage($from, 'assistant', $reply, 'assistant');
+    
+        //se debe enviar un mensaje de error al admin
+        $solicitudHuman = 'El cliente: '.$from.' Necesita ayuda. . .';
+
+        if(env('API_MENSAJES')=="TWILIO"){
+            $this->sendWhatsAppMessage($solicitudHuman, "whatsapp:+51945692831");
+        }else{
+            $this->sendWhatsAppMessage($solicitudHuman, "51945692831@c.us");
+        }  
     }
 
     
